@@ -11,8 +11,6 @@ CountOfClusters := count of *DATA* clusters
                    (the first data cluster)
 Thus, maximum "cluster number" is CountOfClusters + 1
 
-
-
 if (SectorHasBpbSignature()) {
     if (CountofClusters < 4085) && hasFat12Bpb()) {
         /* Volume is FAT12 */
@@ -25,11 +23,14 @@ if (SectorHasBpbSignature()) {
     }
 }
 
+[ ] Add FAT12 partition type
 
+[ ] FAT12 should likely use BitFieldDisablePadding()
+    and BitFieldEnablePadding() to read FAT entries
+    as a stream of bits....
 
 [ ] FAT_JumpToCluster() -- cluster number or index?
     FAT_AddressToCluster() 
-
 
 [ ] rename 'cluster' to 'cluster number' or
     'cluster index' as appropriate throughout
@@ -44,12 +45,6 @@ if (SectorHasBpbSignature()) {
 
 [ ] fix tLFN_RecordSeqNum to reflect below logic
     for handling LFN entries....
-
-[ ] Fix determination of FAT type (number of clusters in volume)
-[ ] Add FAT12 partition type
-[ ] FAT12 should likely use BitFieldDisablePadding()
-    and BitFieldEnablePadding() to read FAT entries
-    as a stream of bits....
 
 [ ] Ensure check for LFN entry...
     1. check if attributes & 0x3F == 0x0F
@@ -102,7 +97,6 @@ if (SectorHasBpbSignature()) {
     VolumeIDArchive         = 40, // 0b0000_0002
     DirectoryArchiveHidden  = 50  // 0b0000_0002
 
-
-[ ] add FAT12
 [ ] add exFAT
+
 [ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12

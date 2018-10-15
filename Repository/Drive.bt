@@ -555,24 +555,33 @@ string ReadFAT16_CLUSTERINFO( FAT16_CLUSTERINFO &info )
 
 
 // FAT 16 Table
+// NOTE: the first argument is the total size of BOTH tables, when two exist on the media
 typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
 {
+    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) return;
     local unsigned char ClusterEntrySize=2;
-    if(NumberOfCopiesOfFats==1)
-    {
-        FAT16_MEDIATYPE      MediaType;
-        FAT16_PARTITIONSTATE PartitionState;
-        FAT16_CLUSTERINFO    Cluster[ (((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize) ];
-    }
-    else if(NumberOfCopiesOfFats==2)
-    {
-        FAT16_MEDIATYPE      MediaType;
-        FAT16_PARTITIONSTATE PartitionState;
-        FAT16_CLUSTERINFO    Cluster[ ((((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize)/NumberOfCopiesOfFats)-1 ];
 
+    // show the first two entries as media type and partition status
+    // FAT16 only supports 512 byte sectors
+    local quad SectorSize = 512;
+    local quad FatTable0FilePosition = FTell();
+    local quad EntriesPerFAT = SectorSize/ClusterEntrySize; // how many full entries per sector?
+    EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
+
+    FAT16_MEDIATYPE      MediaType;
+    FAT16_PARTITIONSTATE PartitionState;
+
+    // but then seek back, so array indices will correspond to stored values in the chain
+    FSeek( FatTable0FilePosition );
+    FAT16_CLUSTERINFO    Cluster[ EntriesPerFAT ];
+
+    if(NumberOfCopiesOfFats==2)
+    {
+        local quad FatTable1FilePosition = FTell();
         FAT16_MEDIATYPE      MediaTypeCopy;
         FAT16_PARTITIONSTATE PartitionStateCopy;
-        FAT16_CLUSTERINFO    ClusterCopy[ ((((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize)/NumberOfCopiesOfFats)-1 ];
+        FSeek( FatTable1FilePosition );
+        FAT16_CLUSTERINFO    ClusterCopy[ EntriesPerFAT ];
     }
 } FAT16_FAT_TABLE;
 
@@ -730,24 +739,30 @@ string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
 
 
 // FAT 32 Table
-typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
+typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad SectorSize)
 {
+    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) return;
     local unsigned char ClusterEntrySize=4;
-    if(NumberOfCopiesOfFats==1)
-    {
-        FAT32_MEDIATYPE      MediaType;
-        FAT32_PARTITIONSTATE PartitionState;
-        FAT32_CLUSTERINFO    Cluster[ (((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize) ];
-    }
-    else if(NumberOfCopiesOfFats==2)
-    {
-        FAT32_MEDIATYPE      MediaType;
-        FAT32_PARTITIONSTATE PartitionState;
-        FAT32_CLUSTERINFO    Cluster[ ((((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize)/NumberOfCopiesOfFats)-0 ];
 
+    // FAT32 supports variable sector size
+    local quad EntriesPerFAT = SectorSize/ClusterEntrySize;          // how many full entries per sector?
+    EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
+
+    // show the first two entries as media type and partition status
+    // but then seek back, so array indices will correspond to stored values in the chain
+    local quad FatTable0FilePosition = FTell();
+    FAT32_MEDIATYPE      MediaType;
+    FAT32_PARTITIONSTATE PartitionState;
+    FSeek( FatTable0FilePosition );
+    FAT32_CLUSTERINFO    Cluster[ EntriesPerFAT ];
+
+    if(NumberOfCopiesOfFats==2)
+    {
+        local quad FatTable1FilePosition = FTell();
         FAT32_MEDIATYPE      MediaTypeCopy;
         FAT32_PARTITIONSTATE PartitionStateCopy;
-        FAT32_CLUSTERINFO    ClusterCopy[ ((((SizeOfFatTableInSectors*512)/ClusterEntrySize)-ClusterEntrySize)/NumberOfCopiesOfFats)-0 ];
+        FSeek( FatTable1FilePosition );
+        FAT32_CLUSTERINFO    ClusterCopy[ EntriesPerFAT ];
     }
 } FAT32_FAT_TABLE;
 
@@ -764,25 +779,27 @@ typedef struct
     local quad  RootDirEntrySector;
     local quad  RootDirEntryFilePos;
     local quad  DataAreaSector;
-    local quad  CurrentPosSector=FTell()/512;
+    local quad  VolumeStartPosition=FTell();
 
     // FAT32 Boot sector
     FAT32_BOOTSECTOR boot_fat32 <bgcolor=cLtPurple>;
+    local quad  BytesPerSector = boot_fat32.bpb_fat32.BytesPerSector;
+    local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
 
     // Calculate offsets
     FATTableSector        = CurrentPosSector   + boot_fat32.bpb_fat32.ReservedSectors;
-    RootDirEntrySector    = FATTableSector     + (boot_fat32.bpb_fat32.SectorsPerFAT*2);
-    RootDirEntryFilePos   = RootDirEntrySector * 512;
-    FATTableFilePos       = FATTableSector     * 512;
+    RootDirEntrySector    = FATTableSector     + (boot_fat32.bpb_fat32.SectorsPerFAT * 2);
+    RootDirEntryFilePos   = RootDirEntrySector * BytesPerSector;
+    FATTableFilePos       = FATTableSector     * BytesPerSector;
     FATTableSizeInSectors = RootDirEntrySector - FATTableSector;
 	DataAreaSector        = RootDirEntrySector;
-	DataAreaFilePos       = DataAreaSector     * 512;
-    ClusterSize           = boot_fat32.bpb_fat32.BytesPerSector * boot_fat32.bpb_fat32.SectorsPerCluster;
+	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
+    ClusterSize           = BytesPerSector * boot_fat32.bpb_fat32.SectorsPerCluster;
     ClusterEntrySize      = 4;
 
     // FAT32 FAT Table
     FSeek( FATTableFilePos );
-    FAT32_FAT_TABLE table( FATTableSizeInSectors, boot_fat32.bpb_fat32.NumberOfFATs );
+    FAT32_FAT_TABLE table( FATTableSizeInSectors, boot_fat32.bpb_fat32.NumberOfFATs, BytesPerSector );
     
     // FAT32 Directory Entry
     FSeek( RootDirEntryFilePos );
