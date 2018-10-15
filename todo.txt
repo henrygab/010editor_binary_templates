@@ -1,7 +1,7 @@
 [x] <format=hex>
 
 [x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
-[ ] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
+[x] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
 
 [ ] If two FATs exist, highlight non-matching entries in RED
 
