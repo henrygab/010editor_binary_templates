@@ -1,12 +1,7 @@
-[x] <format=hex>
 
-[x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
+[ ] add exFAT
 
-[x] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
-
-[x] Clarify number of entries per FAT
-
-[x] begin initial support for non-512 sectors sizes for FAT32
+[ ] Full support for FAT32 on >512 byte sectors
 
 [ ] If two FATs exist, highlight non-matching entries in RED
 
@@ -28,25 +23,22 @@ if (SectorHasBpbSignature()) {
     }
 }
 
+###########################################################
 [ ] Add FAT12 partition type
 
 [ ] FAT12 should likely use BitFieldDisablePadding()
     and BitFieldEnablePadding() to read FAT entries
     as a stream of bits....
+###########################################################
 
-[ ] FAT_JumpToCluster() -- cluster number or index?
-    FAT_AddressToCluster() 
+[ ] FAT_JumpToCluster()
+[ ] FAT_AddressToCluster()
 
 [ ] rename 'cluster' to 'cluster number' or
     'cluster index' as appropriate throughout
 
-[ ] fix readFAT_SHORTENTRY() to handle when
-    first character == 0x05 --> converts to
-    KANJI lead byte value 0xE5 (valid in Japan)
-
-[ ] fix readFAT_SHORTENTRY() to handle when
-    upper bits of the attribute flags are set
-    (e.g., mask with 0x3F ... ??)
+###########################################################
+###########################################################
 
 [ ] fix tLFN_RecordSeqNum to reflect below logic
     for handling LFN entries....
@@ -63,8 +55,16 @@ if (SectorHasBpbSignature()) {
        a. extract characters into the temporary LFN name buffer
           starting at index = remaining_lfn_entries * 13
 
-[ ] fix FAT_DIR_ENTRY struct also...
-[ ] fix FAT directory entry attribute FAT_ATTR_TYPE
+
+[ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12
+
+
+###########################################################
+###########################################################
+###########################################################
+
+[x] fix FAT_DIR_ENTRY struct also...
+[x] fix FAT directory entry attribute FAT_ATTR_TYPE
     to match specification:
     0x0F == ATTR_LONG_NAME
     0x01 == ATTR_READ_ONLY
@@ -73,8 +73,8 @@ if (SectorHasBpbSignature()) {
     0x08 == ATTR_VOLUME_ID
     0x10 == ATTR_DIRECTORY
     0x20 == ATTR_ARCHIVE
-    0x30 == RESERVED_SET_TO_ZERO__PRESERVED
     0x40 == RESERVED_SET_TO_ZERO__PRESERVED
+    0x80 == RESERVED_SET_TO_ZERO__PRESERVED
  
     NoneOrFile              = 0x00, // 0b0000_0000
     ReadOnly                = 0x01, // 0b0000_0001
@@ -102,6 +102,21 @@ if (SectorHasBpbSignature()) {
     VolumeIDArchive         = 40, // 0b0000_0002
     DirectoryArchiveHidden  = 50  // 0b0000_0002
 
-[ ] add exFAT
+[x] fix readFAT_SHORTENTRY() to handle when
+    first character == 0x05 --> converts to
+    KANJI lead byte value 0xE5 (valid in Japan)
 
-[ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12
+[x] fix readFAT_SHORTENTRY() to handle when
+    upper bits of the attribute flags are set
+    (e.g., mask with 0x3F ... ??)
+
+[x] <format=hex>
+
+[x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
+
+[x] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
+
+[x] Clarify number of entries per FAT
+
+[x] begin initial support for non-512 sectors sizes for FAT32
+

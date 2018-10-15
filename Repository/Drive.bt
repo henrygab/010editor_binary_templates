@@ -598,20 +598,22 @@ typedef struct
     local quad  RootDirEntrySector;
     local quad  RootDirEntryFilePos;
     local quad  DataAreaSector;
-    local quad  CurrentPosSector=FTell()/512;
+    local quad  VolumeStartPosition=FTell();
 
     // FAT16 Boot sector
     FAT16_BOOTSECTOR boot_fat16 <bgcolor=cLtPurple>;
+    local quad  BytesPerSector = boot_fat16.bpb_fat16.BytesPerSector;
+    local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
 
     // Calculate offsets
     FATTableSector        = CurrentPosSector   + boot_fat16.bpb_fat16.ReservedSectors;
     RootDirEntrySector    = FATTableSector     + (boot_fat16.bpb_fat16.SectorsPerFAT * 2);
-    RootDirEntryFilePos   = RootDirEntrySector * 512;
-    FATTableFilePos       = FATTableSector     * 512;
+    RootDirEntryFilePos   = RootDirEntrySector * BytesPerSector;
+    FATTableFilePos       = FATTableSector     * BytesPerSector;
     FATTableSizeInSectors = RootDirEntrySector - FATTableSector;
-	DataAreaSector        = RootDirEntrySector + ((boot_fat16.bpb_fat16.MaxRootDirEntries * 32) / boot_fat16.bpb_fat16.BytesPerSector);
-	DataAreaFilePos       = DataAreaSector     * 512;
-    ClusterSize           = boot_fat16.bpb_fat16.BytesPerSector * boot_fat16.bpb_fat16.SectorsPerCluster;
+	DataAreaSector        = RootDirEntrySector + ((boot_fat16.bpb_fat16.MaxRootDirEntries * 32) / BytesPerSector);
+	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
+    ClusterSize           = BytesPerSector     * boot_fat16.bpb_fat16.SectorsPerCluster;
     ClusterEntrySize      = 2;
     
     // FAT16 FAT Table
@@ -905,7 +907,7 @@ string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
     }
     s += ")";
 
-    local uchar tmp2 = type & FAT_ATTR_TYPE_RESERVED_MAST;
+    local uchar tmp2 = type & FAT_ATTR_TYPE_RESERVED_MASK;
     if (tmp2) {
         string q;
         SPrintf(q, " + (Reserved bits) %02xh", tmp2);
@@ -967,7 +969,7 @@ typedef struct
     typedef union ulfn
     {
         tLFN_RecordSeqNum LFN_RecordSeqNum; // LFN Record Sequence Number
-        unsigned char char0;
+        unsigned char char0  <format=hex>;
     } ULFN;
     ULFN    LFN;
     wchar_t UnicodeChar1[5];      // 5 UNICODE characters, LFN first part.
