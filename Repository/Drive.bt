@@ -528,7 +528,31 @@ typedef enum <ushort>
    USED_LAST_CLUSTER_FFFD = 0xFFFD,
    USED_LAST_CLUSTER_FFFE = 0xFFFE,
    USED_LAST_CLUSTER_FFFF = 0xFFFF
-} FAT16_CLUSTERINFO;
+} FAT16_CLUSTERINFO <read=ReadFAT16_CLUSTERINFO>;
+
+string ReadFAT16_CLUSTERINFO( FAT16_CLUSTERINFO &info )
+{
+    if (info == 0x0000) {
+        return "FREE_CLUSTER (0000h)";
+    } else if (info == 0x0001) {
+        return "RESERVED (0001h)";
+    } else if (info >= 0xFFF0 && info <= 0xFFF6) {
+        local string s;
+        SPrintf(s, "RESERVED (%04xh)", info);
+        return s;
+    } else if (info == 0xFFF7) {
+        return "BAD_CLUSTER (FFF7h)";
+    } else if (info >= 0xFFF8 && info <= 0xFFFF) {
+        local string s;
+        SPrintf(s, "END_OF_CHAIN (%04xh)", info);
+        return s;
+    } else {
+        local string s;
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+        return s;
+    }
+}
+
 
 // FAT 16 Table
 typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
