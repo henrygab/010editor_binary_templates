@@ -1,0 +1,108 @@
+[o] <format=hex>
+
+[ ] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
+[ ] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
+
+[ ] If two FATs exist, highlight non-matching entries in RED
+
+[ ] Fix FAT type detection:
+CountOfClusters := count of *DATA* clusters
+                   starting at cluster 2
+                   (the first data cluster)
+Thus, maximum "cluster number" is CountOfClusters + 1
+
+
+
+if (SectorHasBpbSignature()) {
+    if (CountofClusters < 4085) && hasFat12Bpb()) {
+        /* Volume is FAT12 */
+    } else if ((CountofClusters < 65525) && hasFat16Bpb()) {
+        /* Volume is FAT16 */
+    } else if (hasExfatBpb()) {
+        /* Volume is exFAT */
+    } else if (hasFat32Bpb()) {
+        /* Volume is FAT32 */
+    }
+}
+
+
+
+[ ] FAT_JumpToCluster() -- cluster number or index?
+    FAT_AddressToCluster() 
+
+
+[ ] rename 'cluster' to 'cluster number' or
+    'cluster index' as appropriate throughout
+
+[ ] fix readFAT_SHORTENTRY() to handle when
+    first character == 0x05 --> converts to
+    KANJI lead byte value 0xE5 (valid in Japan)
+
+[ ] fix readFAT_SHORTENTRY() to handle when
+    upper bits of the attribute flags are set
+    (e.g., mask with 0x3F ... ??)
+
+[ ] fix tLFN_RecordSeqNum to reflect below logic
+    for handling LFN entries....
+
+[ ] Fix determination of FAT type (number of clusters in volume)
+[ ] Add FAT12 partition type
+[ ] FAT12 should likely use BitFieldDisablePadding()
+    and BitFieldEnablePadding() to read FAT entries
+    as a stream of bits....
+
+[ ] Ensure check for LFN entry...
+    1. check if attributes & 0x3F == 0x0F
+    2. check if byte[0] (LDIR_Ord) != 0xE5 ("last" dir entry)
+    3. if byte[0] & 0x40 == 0x40
+       a. if already started LFN, mark old LFN as "orphans"
+          and discard them...
+       b. set var remaining_lfn_entries = byte[0] & 0x0F
+       c. allocate space for remaining_lfn_entries * 13 characters
+    4. if remaining_lfn_entries > 0
+       a. extract characters into the temporary LFN name buffer
+          starting at index = remaining_lfn_entries * 13
+
+[ ] fix FAT_DIR_ENTRY struct also...
+[ ] fix FAT directory entry attribute FAT_ATTR_TYPE
+    to match specification:
+    0x0F == ATTR_LONG_NAME
+    0x01 == ATTR_READ_ONLY
+    0x02 == ATTR_HIDDEN
+    0x04 == ATTR_SYSTEM
+    0x08 == ATTR_VOLUME_ID
+    0x10 == ATTR_DIRECTORY
+    0x20 == ATTR_ARCHIVE
+    0x30 == RESERVED_SET_TO_ZERO__PRESERVED
+    0x40 == RESERVED_SET_TO_ZERO__PRESERVED
+ 
+    NoneOrFile              = 0x00, // 0b0000_0000
+    ReadOnly                = 0x01, // 0b0000_0001
+    Hidden                  = 0x02, // 0b0000_0010
+    ReadOnlyHidden          = 0x03, // 0b0000_0011
+    System                  = 0x04, // 0b0000_0100
+    ReadOnlySystem          = 0x05, // 0b0000_0101
+    HiddenSystem            = 0x06, // 0b0000_0110
+    ReadOnlyHiddenSystem    = 0x07, // 0b0000_0111
+    VolumeID                = 0x08, // 0b0000_1000
+    ReadOnlyVolumeID        = 0x09, // 0b0000_1001 -- ERROR
+    HiddenVolumeID          = 0x0A, // 0b0000_1010 -- ERROR
+    ReadOnlyHiddenVolumeID  = 0x0B, // 0b0000_1011 -- ERROR
+    SystemVolumeId          = 0x0C, // 0b0000_1100 -- ERROR
+    ReadOnlySystemVolumeID  = 0x0D, // 0b0000_1101 -- ERROR
+    HiddenSystemVolumeID    = 0x0E, // 0b0000_1110 -- ERROR
+    LFN_Entry               = 0x0F, // 0b0000_1111
+    Directory               = 0x10, // 0b0001_0000
+    DirectoryReadonly       = 0x11, // 0b0001_0001
+    DirectoryHidden         = 0x12, // 0b0001_0010
+    DirectoryHiddenSystem   = 0x22, // 0b0000_0002
+    Archive                 = 32, // 0b0000_0002
+    ArchiveReadOnly         = 33, // 0b0000_0002
+    ArchiveHidden           = 34, // 0b0000_0002
+    VolumeIDArchive         = 40, // 0b0000_0002
+    DirectoryArchiveHidden  = 50  // 0b0000_0002
+
+
+[ ] add FAT12
+[ ] add exFAT
+[ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12
