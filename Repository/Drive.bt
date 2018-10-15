@@ -808,37 +808,111 @@ typedef struct
 } FAT32_DRIVE <open=true>;
 
 //################################################################
-// FAT Directory (Shared between FAT16 and FAT32)
+// FAT Directory (Shared between FAT12, FAT16 and FAT32)
 //################################################################
 
 // FAT Directory Attribute
 typedef enum <uchar>
 {
-    NoneOrFile              = 0,
-    ReadOnly                = 1, // bit0
-    Hidden                  = 2, // bit1
-    ReadOnlyHidden          = 3,
-    System                  = 4, // bit2
-    ReadOnlySystem          = 5,
-    HiddenSystem0           = 6,
-    ReadOnlyHiddenSystem    = 7,
-    VolumeID                = 8, // bit3
-    ReadOnlyVolume          = 9,
-    HiddenSystem1           = 10,
-    ReadOnlySystemVolume0   = 11,
-    SystemVolume            = 12,
-    ReadOnlySystemVolume1   = 13,
-    HiddenSystemVolume      = 14,
-    LFN_Entry               = 15,
-    Directory               = 16, // bit4
-    DirectoryHidden         = 18,
-    DirectoryHiddenSystem   = 23,
-    Archive                 = 32, // bit5
-    ArchiveReadOnly         = 33,
-    ArchiveHidden           = 34,
-    VolumeIDArchive         = 40,
-    DirectoryArchiveHidden  = 50
-} FAT_ATTR_TYPE <format=hex>;
+    LongFileNameEntry        = 0x0F, // special case
+    // bits 6 & 7 are reserved
+    NoneOrFile               = 0x00,
+    ReadOnly                 = 0x01, // bit0
+    Hidden                   = 0x02, // bit1
+    System                   = 0x04, // bit2
+    VolumeId                 = 0x08, // bit3
+    Directory                = 0x10, // bit4
+    Archive                  = 0x20, // bit5
+    // Common valid combinations of above
+    ReadOnly_Hidden                          = 0x03,
+    ReadOnly_System                          = 0x05,
+    Hidden_System                            = 0x06,
+    ReadOnly_Hidden_System                   = 0x07,
+    // VolumeID is set only alone, or in LongFileNameEntry
+    // as above, + _Directory
+    ReadOnly_Hidden_Directory                = 0x13,
+    ReadOnly_System_Directory                = 0x15,
+    Hidden_System_Directory                  = 0x16,
+    ReadOnly_Hidden_System_Directory         = 0x17,
+    // as above, + _Archive
+    ReadOnly_Hidden_Archive                  = 0x23,
+    ReadOnly_System_Archive                  = 0x25,
+    Hidden_System_Archive                    = 0x26,
+    ReadOnly_Hidden_System_Archive           = 0x27,
+    ReadOnly_Hidden_Directory_Archive        = 0x33,
+    ReadOnly_System_Directory_Archive        = 0x35,
+    Hidden_System_Directory_Archive          = 0x36,
+    ReadOnly_Hidden_System_Directory_Archive = 0x37,
+} FAT_ATTR_TYPE <read=ReadFAT_ATTR_TYPE>;
+
+local const uchar FAT_ATTR_TYPE_RESERVED_MASK = 0xC0;
+local const uchar FAT_ATTR_TYPE_VALID_MASK = 0x3F;
+
+string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
+{
+    local uchar tmp = type & FAT_ATTR_TYPE_VALID_MASK; // top two bits are reserved
+    local string s;
+    SPrintf(s, "%02xh == ( ", type);
+    if (type == LongFileNameEntry) {
+        s += "LongFileNameEntry";
+    } else {
+        local uchar bitsFound = 0;
+        if (tmp & ReadOnly) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "ReadOnly";
+             bitsFound++;
+        }
+        if (tmp & Hidden) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "Hidden";
+             bitsFound++;
+        }
+        if (tmp & System) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "System";
+            bitsFound++;
+        }
+        if (tmp & VolumeId) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "VolumeId";
+            bitsFound++;
+        }
+        if (tmp & Directory) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "Directory";
+            bitsFound++;
+        }
+        if (tmp & Archive) {
+            if ( bitsFound) {
+                s += "_";
+            }
+            s += "Archive";
+            bitsFound++;
+        }
+        if (!bitsFound) {
+            s += "NoneOrFile";
+        }
+    }
+    s += ")";
+
+    local uchar tmp2 = type & FAT_ATTR_TYPE_RESERVED_MAST;
+    if (tmp2) {
+        string q;
+        SPrintf(q, " + (Reserved bits) %02xh", tmp2);
+        s += q;
+    }
+    return s;
+}
 
 // FAT Short directory entry
 typedef struct // Normal-Short structure
@@ -864,27 +938,16 @@ string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
 
     if(f.Name[0]==0)
     {
-        return "Last Dir Entry Empty";
+        return "Last Dir Entry (Empty)";
     }
 
-    // Short Entry 
-    if( (f.Attribute == NoneOrFile) ||
-        (f.Attribute == ReadOnly) ||
-        (f.Attribute == Hidden) ||
-        (f.Attribute == ReadOnlyHidden) ||
-        (f.Attribute == HiddenSystem1) ||
-        (f.Attribute == ReadOnlySystemVolume0) ||
-        (f.Attribute == LFN_Entry) ||
-        (f.Attribute == Archive) ||
-        (f.Attribute == ArchiveReadOnly) ||
-        (f.Attribute == ArchiveHidden) )
-    {
+    // LFN entry
+    if(f.Attribute & FAT_ATTR_TYPE_VALID_MASK == LongFileNameEntry) {
+        SPrintf(s, "%s%s (%s)",f.Name,f.Extension,EnumToString(f.Attribute));
+    } else {
         SPrintf(s, "%s.%s (%s)",f.Name,f.Extension,EnumToString(f.Attribute));
     }
-    else
-    {
-        SPrintf(s, "%s%s (%s)",f.Name,f.Extension,EnumToString(f.Attribute));
-    }
+    
     if( (uchar)f.Name[0] == 0xE5 )
         return "**Erased name:" + s;
     else
