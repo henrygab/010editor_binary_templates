@@ -1,7 +1,12 @@
 [x] <format=hex>
 
 [x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
+
 [x] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
+
+[x] Clarify number of entries per FAT
+
+[x] begin initial support for non-512 sectors sizes for FAT32
 
 [ ] If two FATs exist, highlight non-matching entries in RED
 

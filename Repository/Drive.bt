@@ -725,9 +725,9 @@ string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
     } else if (tmp == 0x00000001) {
         s += "RESERVED (00000001h)";
     } else if (tmp >= 0x0FFFFFF0 && tmp <= 0x0FFFFFF6) {
-        SPrintf(s, "RESERVED (%04xh)", tmp);
+        SPrintf(s, "RESERVED (%08xh)", tmp);
     } else if (tmp == 0x0FFFFFF7) {
-        s += "BAD_CLUSTER (FFFFFFF7h)";
+        s += "BAD_CLUSTER (0FFFFFF7h)";
     } else if (tmp >= 0x0FFFFFF8 && tmp <= 0x0FFFFFFF) {
         SPrintf(s, "END_OF_CHAIN (%08xh)", info);
     } else {
