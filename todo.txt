@@ -1,5 +1,24 @@
+Major improvements for FAT16 and FAT32.
+* Detect and handle some types of orphaned LFN entries (sequence number)
+  NOTE: Does not yet check CRC of short-entry name against LFN values.
+* Fix data corruption regression (off-by-two error) caused by earlier
+  changes to include indices 0 and 1 in FAT table.
+* Add a number of utility functions to simplify code:
+    ReadFAT_SHORTENTRY_Filename
+    FAT_DirectoryEntryType         (masks to valid bits only)
+    FAT_IsDirectoryEntryLFN
+    FAT_IsDirectoryEntryVolumeID   (excludes LFN entries)
+    ReadFAT_SHORTENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDirectory
+    ReadFAT_DIR_ENTRY_LongFilename
+* Fixes to displayed filenames in many cases.
 
-[ ] add exFAT
+
+[ ] add exFAT?
+
+
+
 
 [ ] Full support for FAT32 on >512 byte sectors
 
@@ -22,6 +41,31 @@ if (SectorHasBpbSignature()) {
         /* Volume is FAT32 */
     }
 }
+
+
+[ ] Remove global state from FAT_DIR_ENTRY
+//
+// UPDATED BY:
+//       FAT_CheckDirEntryRead()
+// USED BY:
+//       FAT_DIR_ENTRY() - to finish at proper location in file
+//
+// Special local variables used when defining FAT dir entries.
+//
+// Valid only within the context of a SINGLE FAT_DIR_ENTRY creation,
+// (which is really a conceptual entry, as could include many LFN).
+// Required because the "directory entry set" may not be contiguous
+// (e.g., may start and end in different, non-contiguous clusters).
+//
+// New design:
+//     define structure holding these three entries
+//     at start of FAT_DIR_ENTRY, allocate a local variable of this type
+//     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
+//     RESULT: clearer code 
+//
+
+[ ] Rename FAT_DIR_ENTRY to FAT_DIRECTORY_ENTRY_SET
+
 
 ###########################################################
 [ ] Add FAT12 partition type
