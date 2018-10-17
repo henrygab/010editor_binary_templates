@@ -498,49 +498,49 @@ string ReadBOOTSECTOR_FAT16( FAT16_BOOTSECTOR &boot )
 // FAT16 FAT Table
 typedef enum <ushort>
 {
-   HARD_DISK           = 0xfff8,
-   FLOPPY_DISK         = 0xfff0
-} FAT16_MEDIATYPE <format=hex>;
+   FAT16_MEDIA_HARD_DISK           = 0xfff8,
+   FAT16_MEDIA_FLOPPY_DISK         = 0xfff0
+} FAT16_MEDIA_TYPE <format=hex>;
 
 typedef enum <ushort>
 {
-   PARTITION_NOT_IN_USE   = 0xffff,
-   PARTITION_IN_USE       = 0xfff7
-} FAT16_PARTITIONSTATE <format=hex>;
+   FAT16_PARTITION_NOT_IN_USE   = 0xffff,
+   FAT16_PARTITION_IN_USE       = 0xfff7
+} FAT16_PARTITION_STATE <format=hex>;
 
 typedef enum <ushort>
 {
-   FREE_CLUSTER   = 0x0000,
-   RESERVED_0001  = 0x0001,
-   RESERVED_FFF0  = 0xFFF0,
-   RESERVED_FFF1  = 0xFFF1,
-   RESERVED_FFF2  = 0xFFF2,
-   RESERVED_FFF3  = 0xFFF3,
-   RESERVED_FFF4  = 0xFFF4,
-   RESERVED_FFF5  = 0xFFF5,
-   RESERVED_FFF6  = 0xFFF6,
-   BAD_CLUSTER    = 0xFFF7,
-   END_OF_CHAIN_FFF8 = 0xFFF8,
-   END_OF_CHAIN_FFF9 = 0xFFF9,
-   END_OF_CHAIN_FFFA = 0xFFFA,
-   END_OF_CHAIN_FFFB = 0xFFFB,
-   END_OF_CHAIN_FFFC = 0xFFFC,
-   END_OF_CHAIN_FFFD = 0xFFFD,
-   END_OF_CHAIN_FFFE = 0xFFFE,
-   END_OF_CHAIN_FFFF = 0xFFFF
-} FAT16_CLUSTERINFO <read=ReadFAT16_CLUSTERINFO>;
+   FAT16_CLUSTER_FREE_CLUSTER   = 0x0000,
+   FAT16_CLUSTER_RESERVED_0001  = 0x0001,
+   FAT16_CLUSTER_RESERVED_FFF0  = 0xFFF0,
+   FAT16_CLUSTER_RESERVED_FFF1  = 0xFFF1,
+   FAT16_CLUSTER_RESERVED_FFF2  = 0xFFF2,
+   FAT16_CLUSTER_RESERVED_FFF3  = 0xFFF3,
+   FAT16_CLUSTER_RESERVED_FFF4  = 0xFFF4,
+   FAT16_CLUSTER_RESERVED_FFF5  = 0xFFF5,
+   FAT16_CLUSTER_RESERVED_FFF6  = 0xFFF6,
+   FAT16_CLUSTER_BAD_CLUSTER    = 0xFFF7,
+   FAT16_CLUSTER_END_OF_CHAIN_FFF8 = 0xFFF8,
+   FAT16_CLUSTER_END_OF_CHAIN_FFF9 = 0xFFF9,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFA = 0xFFFA,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFB = 0xFFFB,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFC = 0xFFFC,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFD = 0xFFFD,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFE = 0xFFFE,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFF = 0xFFFF
+} FAT16_CLUSTER_INFO <read=ReadFAT16_CLUSTER_INFO>;
 
-string ReadFAT16_CLUSTERINFO( FAT16_CLUSTERINFO &info )
+string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
 {
-    if (info == 0x0000) {
+    if (info == FAT16_CLUSTER_FREE_CLUSTER) {
         return "FREE_CLUSTER (0000h)";
-    } else if (info == 0x0001) {
+    } else if (info == FAT16_CLUSTER_RESERVED_0001) {
         return "RESERVED (0001h)";
     } else if (info >= 0xFFF0 && info <= 0xFFF6) {
         local string s;
         SPrintf(s, "RESERVED (%04xh)", info);
         return s;
-    } else if (info == 0xFFF7) {
+    } else if (info == FAT16_CLUSTER_BAD_CLUSTER) {
         return "BAD_CLUSTER (FFF7h)";
     } else if (info >= 0xFFF8 && info <= 0xFFFF) {
         local string s;
@@ -568,20 +568,20 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
     local quad EntriesPerFAT = SectorSize/ClusterEntrySize; // how many full entries per sector?
     EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
 
-    FAT16_MEDIATYPE      MediaType;
-    FAT16_PARTITIONSTATE PartitionState;
+    FAT16_MEDIA_TYPE      MediaType;
+    FAT16_PARTITION_STATE PartitionState;
 
     // but then seek back, so array indices will correspond to stored values in the chain
     FSeek( FatTable0FilePosition );
-    FAT16_CLUSTERINFO    Cluster[ EntriesPerFAT ];
+    FAT16_CLUSTER_INFO    Cluster[ EntriesPerFAT ];
 
     if(NumberOfCopiesOfFats==2)
     {
         local quad FatTable1FilePosition = FTell();
-        FAT16_MEDIATYPE      MediaTypeCopy;
-        FAT16_PARTITIONSTATE PartitionStateCopy;
+        FAT16_MEDIA_TYPE      MediaTypeCopy;
+        FAT16_PARTITION_STATE PartitionStateCopy;
         FSeek( FatTable1FilePosition );
-        FAT16_CLUSTERINFO    ClusterCopy[ EntriesPerFAT ];
+        FAT16_CLUSTER_INFO    ClusterCopy[ EntriesPerFAT ];
     }
 } FAT16_FAT_TABLE;
 
@@ -683,36 +683,36 @@ string ReadFAT32_BOOTSECTOR( FAT32_BOOTSECTOR &boot )
 
 typedef enum <ulong>
 {
-   HARD_DISK_FAT32           = 0x0ffffff8,
-   FLOPPY_DISK_FAT32         = 0x0ffffff0
+   FAT32_MEDIA_HARD_DISK           = 0x0ffffff8,
+   FAT32_MEDIA_FLOPPY_DISK         = 0x0ffffff0
 } FAT32_MEDIATYPE <format=hex>;
 
 typedef enum <ulong>
 {
-   PARTITION_NOT_IN_USE_FAT32   = 0xffffffff,
-   PARTITION_IN_USE_FAT32       = 0xfffffff7
-} FAT32_PARTITIONSTATE <format=hex>;
+   FAT32_PARTITION_NOT_IN_USE   = 0xffffffff,
+   FAT32_PARTITION_IN_USE       = 0xfffffff7
+} FAT32_PARTITION_STATE <format=hex>;
 
 typedef enum <ulong>
 {
-   FREE_CLUSTER_FAT32 = 0x00000000,
-   RESERVED_0001_FAT32  = 0x00000001,
-   RESERVED_FFF0_FAT32  = 0x0FFFFFF0,
-   RESERVED_FFF1_FAT32  = 0x0FFFFFF1,
-   RESERVED_FFF2_FAT32  = 0x0FFFFFF2,
-   RESERVED_FFF3_FAT32  = 0x0FFFFFF3,
-   RESERVED_FFF4_FAT32  = 0x0FFFFFF4,
-   RESERVED_FFF5_FAT32  = 0x0FFFFFF5,
-   RESERVED_FFF6_FAT32  = 0x0FFFFFF6,
-   BAD_CLUSTER_FAT32  = 0x0FFFFFF7,
-   END_OF_CHAIN_FFF8_FAT32 = 0x0FFFFFF8,
-   END_OF_CHAIN_FFF9_FAT32 = 0x0FFFFFF9,
-   END_OF_CHAIN_FFFA_FAT32 = 0x0FFFFFFA,
-   END_OF_CHAIN_FFFB_FAT32 = 0x0FFFFFFB,
-   END_OF_CHAIN_FFFC_FAT32 = 0x0FFFFFFC,
-   END_OF_CHAIN_FFFD_FAT32 = 0x0FFFFFFD,
-   END_OF_CHAIN_FFFE_FAT32 = 0x0FFFFFFE,
-   END_OF_CHAIN_FFFF_FAT32 = 0x0FFFFFFF
+   FAT32_CLUSTER_FREE = 0x00000000,
+   FAT32_CLUSTER_RESERVED_0001  = 0x00000001,
+   FAT32_CLUSTER_RESERVED_FFF0  = 0x0FFFFFF0,
+   FAT32_CLUSTER_RESERVED_FFF1  = 0x0FFFFFF1,
+   FAT32_CLUSTER_RESERVED_FFF2  = 0x0FFFFFF2,
+   FAT32_CLUSTER_RESERVED_FFF3  = 0x0FFFFFF3,
+   FAT32_CLUSTER_RESERVED_FFF4  = 0x0FFFFFF4,
+   FAT32_CLUSTER_RESERVED_FFF5  = 0x0FFFFFF5,
+   FAT32_CLUSTER_RESERVED_FFF6  = 0x0FFFFFF6,
+   FAT32_CLUSTER_BAD_CLUSTER    = 0x0FFFFFF7,
+   FAT32_CLUSTER_END_OF_CHAIN_FFF8 = 0x0FFFFFF8,
+   FAT32_CLUSTER_END_OF_CHAIN_FFF9 = 0x0FFFFFF9,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFA = 0x0FFFFFFA,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFB = 0x0FFFFFFB,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFC = 0x0FFFFFFC,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFD = 0x0FFFFFFD,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFE = 0x0FFFFFFE,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFF = 0x0FFFFFFF
 } FAT32_CLUSTERINFO <read=ReadFAT32_CLUSTERINFO>;
 
 string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
@@ -722,13 +722,13 @@ string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
     ulong reserved_bits = info & 0xF0000000;
     string s = "";
 
-    if (tmp == 0x00000000) {
+    if (tmp == FAT32_CLUSTER_FREE) {
         s += "FREE_CLUSTER (00000000h)";
     } else if (tmp == 0x00000001) {
         s += "RESERVED (00000001h)";
     } else if (tmp >= 0x0FFFFFF0 && tmp <= 0x0FFFFFF6) {
         SPrintf(s, "RESERVED (%08xh)", tmp);
-    } else if (tmp == 0x0FFFFFF7) {
+    } else if (tmp == FAT32_CLUSTER_BAD_CLUSTER) {
         s += "BAD_CLUSTER (0FFFFFF7h)";
     } else if (tmp >= 0x0FFFFFF8 && tmp <= 0x0FFFFFFF) {
         SPrintf(s, "END_OF_CHAIN (%08xh)", info);
@@ -754,7 +754,7 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad S
     // but then seek back, so array indices will correspond to stored values in the chain
     local quad FatTable0FilePosition = FTell();
     FAT32_MEDIATYPE      MediaType;
-    FAT32_PARTITIONSTATE PartitionState;
+    FAT32_PARTITION_STATE PartitionState;
     FSeek( FatTable0FilePosition );
     FAT32_CLUSTERINFO    Cluster[ EntriesPerFAT ];
 
@@ -762,7 +762,7 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad S
     {
         local quad FatTable1FilePosition = FTell();
         FAT32_MEDIATYPE      MediaTypeCopy;
-        FAT32_PARTITIONSTATE PartitionStateCopy;
+        FAT32_PARTITION_STATE PartitionStateCopy;
         FSeek( FatTable1FilePosition );
         FAT32_CLUSTERINFO    ClusterCopy[ EntriesPerFAT ];
     }
