@@ -965,6 +965,12 @@ string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
     {
         result = "?" + SubStr(result, 1);
     }
+    else if ((uchar)result[0] == 0x05)
+    {
+        // 0xE5 is a valid lead byte in Kanji.
+        // for this case, specification stores it as value 0x05.
+        result = "\xE5" + SubStr(result, 1);
+    }
     return result;
 }
 string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
@@ -975,7 +981,7 @@ string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
         return "Last Dir Entry (Empty)";
     }
     s = ReadFAT_SHORTENTRY_Filename(f);
-    if( (uchar)f.Name[0] == 0xE5 )
+    if( (uchar)f.Name[0] == 0xE5 ) // must goto structure, not processed filename, due to 0x05 --> 0xE5 Kanji conversion
     {
         return "**Erased name '?" + StrDel(s, 0, 1) + "' (" + EnumToString(f.Attribute) + ")";
     }
@@ -1028,16 +1034,22 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 //
 // UPDATED BY:
 //       FAT_CheckDirEntryRead(), called after each non-local FAT_DIR_ENTRY
-//       - sets FATDirEntryEnd   to current position (if contiguous)
+//       - sets FATDirEntryEnd   to current position (if contiguous aka still in original cluster)
 //       - sets FATDirEntryStart to current position (always)
 //       - when FATDirEntryStart hits next cluster:
 //         sets FATIsDirEntryContiguous to false
 //         sets FATDirEntryStart to 
-//         
-//       FAT_DIRECTORY - sets  FATDirEntryStart at start of a new FAT_DIRECTORY
+//
+//       FAT_DIR_ENTRY()
+//       - sets FATDirEntryEnd to FTell() at start of a new FAT_DIR_ENTRY
 //
 // USED BY:
-//       FAT_DIR_ENTRY() - to finish at proper location in file
+//       FAT_CheckDirEntryRead()
+//       - all three valriables used/updated
+//
+//       FAT_DIR_ENTRY()
+//       - sets FATDirEntryEnd to FTell() at start
+//       - seeks to FATDirEntryEnd 
 //
 // Special local variables used when defining FAT dir entries.
 //
@@ -1046,7 +1058,7 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 // Required because the "directory entry set" may not be contiguous
 // (e.g., may start and end in different, non-contiguous clusters).
 //
-// New design:
+// New design?
 //     define structure holding these three entries
 //     at start of FAT_DIR_ENTRY, allocate a local variable of this type
 //     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
