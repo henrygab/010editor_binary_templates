@@ -816,35 +816,35 @@ typedef struct
 // FAT Directory Attribute
 typedef enum <uchar>
 {
-    LongFileNameEntry        = 0x0F, // special case
+    FAT_ATTR_LongFileNameEntry        = 0x0F, // special case
     // bits 6 & 7 are reserved
-    NoneOrFile               = 0x00,
-    ReadOnly                 = 0x01, // bit0
-    Hidden                   = 0x02, // bit1
-    System                   = 0x04, // bit2
-    VolumeId                 = 0x08, // bit3
-    Directory                = 0x10, // bit4
-    Archive                  = 0x20, // bit5
+    FAT_ATTR_NoneOrFile               = 0x00,
+    FAT_ATTR_ReadOnly                 = 0x01, // bit0
+    FAT_ATTR_Hidden                   = 0x02, // bit1
+    FAT_ATTR_System                   = 0x04, // bit2
+    FAT_ATTR_VolumeId                 = 0x08, // bit3
+    FAT_ATTR_Directory                = 0x10, // bit4
+    FAT_ATTR_Archive                  = 0x20, // bit5
     // Common valid combinations of above
-    ReadOnly_Hidden                          = 0x03,
-    ReadOnly_System                          = 0x05,
-    Hidden_System                            = 0x06,
-    ReadOnly_Hidden_System                   = 0x07,
-    // VolumeID is set only alone, or in LongFileNameEntry
+    FAT_ATTR_ReadOnly_Hidden                          = 0x03,
+    FAT_ATTR_ReadOnly_System                          = 0x05,
+    FAT_ATTR_Hidden_System                            = 0x06,
+    FAT_ATTR_ReadOnly_Hidden_System                   = 0x07,
+    // VolumeID is set only alone, or in FAT_ATTR_LongFileNameEntry
     // as above, + _Directory
-    ReadOnly_Hidden_Directory                = 0x13,
-    ReadOnly_System_Directory                = 0x15,
-    Hidden_System_Directory                  = 0x16,
-    ReadOnly_Hidden_System_Directory         = 0x17,
+    FAT_ATTR_ReadOnly_Hidden_Directory                = 0x13,
+    FAT_ATTR_ReadOnly_System_Directory                = 0x15,
+    FAT_ATTR_Hidden_System_Directory                  = 0x16,
+    FAT_ATTR_ReadOnly_Hidden_System_Directory         = 0x17,
     // as above, + _Archive
-    ReadOnly_Hidden_Archive                  = 0x23,
-    ReadOnly_System_Archive                  = 0x25,
-    Hidden_System_Archive                    = 0x26,
-    ReadOnly_Hidden_System_Archive           = 0x27,
-    ReadOnly_Hidden_Directory_Archive        = 0x33,
-    ReadOnly_System_Directory_Archive        = 0x35,
-    Hidden_System_Directory_Archive          = 0x36,
-    ReadOnly_Hidden_System_Directory_Archive = 0x37,
+    FAT_ATTR_ReadOnly_Hidden_Archive                  = 0x23,
+    FAT_ATTR_ReadOnly_System_Archive                  = 0x25,
+    FAT_ATTR_Hidden_System_Archive                    = 0x26,
+    FAT_ATTR_ReadOnly_Hidden_System_Archive           = 0x27,
+    FAT_ATTR_ReadOnly_Hidden_Directory_Archive        = 0x33,
+    FAT_ATTR_ReadOnly_System_Directory_Archive        = 0x35,
+    FAT_ATTR_Hidden_System_Directory_Archive          = 0x36,
+    FAT_ATTR_ReadOnly_Hidden_System_Directory_Archive = 0x37,
 } FAT_ATTR_TYPE <read=ReadFAT_ATTR_TYPE>;
 local const uchar FAT_ATTR_TYPE_RESERVED_MASK = 0xC0;
 local const uchar FAT_ATTR_TYPE_VALID_MASK = 0x3F;
@@ -855,47 +855,46 @@ string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
 {
     local uchar tmp = type & FAT_ATTR_TYPE_VALID_MASK; // top two bits are reserved
     local string s;
-    SPrintf(s, "%02xh == ( ", type);
-    if (type == LongFileNameEntry) {
+    if (tmp == FAT_ATTR_LongFileNameEntry) {
         s += "LongFileNameEntry";
     } else {
         local uchar bitsFound = 0;
-        if (tmp & ReadOnly) {
+        if (tmp & FAT_ATTR_ReadOnly) {
             if ( bitsFound) {
                 s += "_";
             }
             s += "ReadOnly";
              bitsFound++;
         }
-        if (tmp & Hidden) {
+        if (tmp & FAT_ATTR_Hidden) {
             if ( bitsFound) {
                 s += "_";
             }
             s += "Hidden";
              bitsFound++;
         }
-        if (tmp & System) {
+        if (tmp & FAT_ATTR_System) {
             if ( bitsFound) {
                 s += "_";
             }
             s += "System";
             bitsFound++;
         }
-        if (tmp & VolumeId) {
+        if (tmp & FAT_ATTR_VolumeId) {
             if ( bitsFound) {
                 s += "_";
             }
             s += "VolumeId";
             bitsFound++;
         }
-        if (tmp & Directory) {
+        if (tmp & FAT_ATTR_Directory) {
             if ( bitsFound) {
                 s += "_";
             }
             s += "Directory";
             bitsFound++;
         }
-        if (tmp & Archive) {
+        if (tmp & FAT_ATTR_Archive) {
             if ( bitsFound) {
                 s += "_";
             }
@@ -906,7 +905,6 @@ string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
             s += "NoneOrFile";
         }
     }
-    s += ")";
 
     local uchar tmp2 = type & FAT_ATTR_TYPE_RESERVED_MASK;
     if (tmp2) {
@@ -950,11 +948,11 @@ string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
     if (nameLength      > 0) { Strncpy(name,      f.Name,      nameLength     ); }
     if (extensionLength > 0) { Strncpy(extension, f.Extension, extensionLength); }
     
-    // Add period only if extension exists, unless it's a LFN or VolumeID
+    // Add period only if extension exists, unless it's a FAT_ATTR_LongFileNameEntry or FAT_ATTR_VolumeID
     local int addPeriod = extensionLength > 0;
-    if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK == LongFileNameEntry) {
+    if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK == FAT_ATTR_LongFileNameEntry) {
         addPeriod = false;
-    } else if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK & VolumeId) {
+    } else if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK & FAT_ATTR_VolumeId) {
         addPeriod = false;
     }
     local string result = name;
@@ -983,11 +981,11 @@ string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
     s = ReadFAT_SHORTENTRY_Filename(f);
     if( (uchar)f.Name[0] == 0xE5 ) // must goto structure, not processed filename, due to 0x05 --> 0xE5 Kanji conversion
     {
-        return "**Erased name '?" + StrDel(s, 0, 1) + "' (" + EnumToString(f.Attribute) + ")";
+        return "**Erased name '?" + StrDel(s, 0, 1) + "' (" + ReadFAT_ATTR_TYPE(f.Attribute) + ")";
     }
     else
     {
-        return s + " (" + EnumToString(f.Attribute) + ")";
+        return s + " (" + ReadFAT_ATTR_TYPE(f.Attribute) + ")";
     }
 }
 
@@ -1100,12 +1098,12 @@ int FAT_IsDirectoryEntryLFN( int64 directoryEntryStart )
     // (((LDIR_attr & ATTR_LONG_NAME_MASK) == ATTR_LONG_NAME) && (LDIR_Ord != 0xE5))
     local byte firstByte = ReadByte( directoryEntryStart );
     local byte type = FAT_DirectoryEntryType(directoryEntryStart);
-    return (type == LongFileNameEntry) && (firstByte != 0xE5);
+    return (type == FAT_ATTR_LongFileNameEntry) && (firstByte != 0xE5);
 }
 int FAT_IsDirectoryEntryVolumeID( int64 directoryEntryStart )
 {
     local byte type = FAT_DirectoryEntryType(directoryEntryStart);
-    return ( !FAT_IsDirectoryEntryLFN(directoryEntryStart) && ((type & VolumeId) != 0) );
+    return ( !FAT_IsDirectoryEntryLFN(directoryEntryStart) && ((type & FAT_ATTR_VolumeId) != 0) );
 }
 
 // FAT Directory Entry
@@ -1231,7 +1229,7 @@ typedef struct
                 FAT_FILE_DATA data;       
     
             // Define the sub-directory
-            if( (short_entry.Attribute & Directory) &&
+            if( (short_entry.Attribute & FAT_ATTR_Directory) &&
                 (short_entry.Name != ".       ")    && // bytes from structure, not formatted to remove spaces
                 (short_entry.Name != "..      ")    && // bytes from structure, not formatted to remove spaces
                 ((uchar)short_entry.Name[0] != 0xE5) )
@@ -1273,7 +1271,7 @@ int ReadFAT_DIR_ENTRY_IsDirectory( FAT_DIR_ENTRY &f )
 {
     if ( exists( f.short_entry ) )
     {
-        return (f.short_entry.Attribute & Directory) && ((UBYTE)f.short_entry.Name[0] != 0xE5);
+        return (f.short_entry.Attribute & FAT_ATTR_Directory) && ((UBYTE)f.short_entry.Name[0] != 0xE5);
     }
     else
     {
@@ -1352,7 +1350,7 @@ wstring ReadFAT_DIR_ENTRY( FAT_DIR_ENTRY &f )
     // Add attribute info
     if ( exists(f.short_entry) )
     {
-        attributeInfo = " (" + EnumToString(f.short_entry.Attribute) + ")";
+        attributeInfo = " (" + ReadFAT_ATTR_TYPE(f.short_entry.Attribute) + ")";
     }
     if ( ReadFAT_DIR_ENTRY_IsDirectory(f) )
     {
