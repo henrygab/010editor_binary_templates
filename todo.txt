@@ -1,18 +1,3 @@
-Major improvements for FAT16 and FAT32.
-* Detect and handle some types of orphaned LFN entries (sequence number)
-  NOTE: Does not yet check CRC of short-entry name against LFN values.
-* Fix data corruption regression (off-by-two error) caused by earlier
-  changes to include indices 0 and 1 in FAT table.
-* Add a number of utility functions to simplify code:
-    ReadFAT_SHORTENTRY_Filename
-    FAT_DirectoryEntryType         (masks to valid bits only)
-    FAT_IsDirectoryEntryLFN
-    FAT_IsDirectoryEntryVolumeID   (excludes LFN entries)
-    ReadFAT_SHORTENTRY_IsDeleted
-    ReadFAT_DIR_ENTRY_IsDeleted
-    ReadFAT_DIR_ENTRY_IsDirectory
-    ReadFAT_DIR_ENTRY_LongFilename
-* Fixes to displayed filenames in many cases.
 
 
 [ ] add exFAT?
@@ -109,42 +94,7 @@ if (SectorHasBpbSignature()) {
 
 [x] fix FAT_DIR_ENTRY struct also...
 [x] fix FAT directory entry attribute FAT_ATTR_TYPE
-    to match specification:
-    0x0F == ATTR_LONG_NAME
-    0x01 == ATTR_READ_ONLY
-    0x02 == ATTR_HIDDEN
-    0x04 == ATTR_SYSTEM
-    0x08 == ATTR_VOLUME_ID
-    0x10 == ATTR_DIRECTORY
-    0x20 == ATTR_ARCHIVE
-    0x40 == RESERVED_SET_TO_ZERO__PRESERVED
-    0x80 == RESERVED_SET_TO_ZERO__PRESERVED
- 
-    NoneOrFile              = 0x00, // 0b0000_0000
-    ReadOnly                = 0x01, // 0b0000_0001
-    Hidden                  = 0x02, // 0b0000_0010
-    ReadOnlyHidden          = 0x03, // 0b0000_0011
-    System                  = 0x04, // 0b0000_0100
-    ReadOnlySystem          = 0x05, // 0b0000_0101
-    HiddenSystem            = 0x06, // 0b0000_0110
-    ReadOnlyHiddenSystem    = 0x07, // 0b0000_0111
-    VolumeID                = 0x08, // 0b0000_1000
-    ReadOnlyVolumeID        = 0x09, // 0b0000_1001 -- ERROR
-    HiddenVolumeID          = 0x0A, // 0b0000_1010 -- ERROR
-    ReadOnlyHiddenVolumeID  = 0x0B, // 0b0000_1011 -- ERROR
-    SystemVolumeId          = 0x0C, // 0b0000_1100 -- ERROR
-    ReadOnlySystemVolumeID  = 0x0D, // 0b0000_1101 -- ERROR
-    HiddenSystemVolumeID    = 0x0E, // 0b0000_1110 -- ERROR
-    LFN_Entry               = 0x0F, // 0b0000_1111
-    Directory               = 0x10, // 0b0001_0000
-    DirectoryReadonly       = 0x11, // 0b0001_0001
-    DirectoryHidden         = 0x12, // 0b0001_0010
-    DirectoryHiddenSystem   = 0x22, // 0b0000_0002
-    Archive                 = 32, // 0b0000_0002
-    ArchiveReadOnly         = 33, // 0b0000_0002
-    ArchiveHidden           = 34, // 0b0000_0002
-    VolumeIDArchive         = 40, // 0b0000_0002
-    DirectoryArchiveHidden  = 50  // 0b0000_0002
+    to match specification.
 
 [x] fix readFAT_SHORTENTRY() to handle when
     first character == 0x05 --> converts to
@@ -163,4 +113,35 @@ if (SectorHasBpbSignature()) {
 [x] Clarify number of entries per FAT
 
 [x] begin initial support for non-512 sectors sizes for FAT32
+
+[x] Detect and handle some types of orphaned LFN entries (sequence number)
+    NOTE: Does not yet check CRC of short-entry name against LFN values.
+
+[x] Fix data corruption regression (off-by-two error) caused by earlier
+    changes to include indices 0 and 1 in FAT table.
+
+[x] Add a number of utility functions to simplify code:
+    ReadFAT_SHORTENTRY_Filename
+    FAT_DirectoryEntryType         (masks to valid bits only)
+    FAT_IsDirectoryEntryLFN
+    FAT_IsDirectoryEntryVolumeID   (excludes LFN entries)
+    ReadFAT_SHORTENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDirectory
+    ReadFAT_DIR_ENTRY_LongFilename
+
+[x] Fixes to displayed filenames in many cases.
+
+[x] Add FAT_ATTR_ prefix to FAT_ATTR_TYPE enumeration values.
+    This helps avoid naming conflicts, especially where these attributes
+    included such common names as "system".
+
+[x] Change additional enum values to have a prefix (help avoid naming conflicts).
+    FAT16_MEDIATYPE      ==> FAT16_MEDIA_TYPE     , with prefix FAT16_MEDIATYPE_
+    FAT16_PARTITIONSTATE ==> FAT16_PARTITION_STATE, with prefix FAT16_PARTITION_
+    FAT16_CLUSTERINFO    ==> FAT16_CLUSTER_INFO   , with prefix FAT16_CLUSTER_
+    FAT32_MEDIATYPE      ==> FAT32_MEDIA_TYPE     , with prefix FAT32_MEDIATYPE_
+    FAT32_PARTITIONSTATE ==> FAT32_PARTITION_STATE, with prefix FAT32_PARTITION_
+    FAT32_CLUSTERINFO    ==> FAT32_CLUSTER_INFO   , with prefix FAT32_CLUSTER_
+
 
