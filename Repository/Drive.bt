@@ -1031,15 +1031,15 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 
 //
 // UPDATED BY:
-//       FAT_CheckDirEntryRead(), called after each non-local FAT_DIR_ENTRY
+//       FAT_CheckDirEntryRead(), called after each non-local FAT_DIRECTORY_ENTRY
 //       - sets XYZZY_FATDirEntryEnd   to current position (if contiguous aka still in original cluster)
 //       - sets XYZZY_FATDirEntryStart to current position (always)
 //       - when XYZZY_FATDirEntryStart hits next cluster:
 //         sets XYZZY_FATIsDirEntryContiguous to false
 //         sets XYZZY_FATDirEntryStart to 
 //
-//       FAT_DIR_ENTRY()
-//       - sets XYZZY_FATDirEntryEnd to FTell() at start of a new FAT_DIR_ENTRY
+//       FAT_DIRECTORY_ENTRY()
+//       - sets XYZZY_FATDirEntryEnd to FTell() at start of a new FAT_DIRECTORY_ENTRY
 //
 //       FAT_DIRECTORY()
 //       - 
@@ -1048,20 +1048,20 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 //       FAT_CheckDirEntryRead()
 //       - all three valriables used/updated
 //
-//       FAT_DIR_ENTRY()
+//       FAT_DIRECTORY_ENTRY()
 //       - sets XYZZY_FATDirEntryEnd to FTell() at start
 //       - seeks to XYZZY_FATDirEntryEnd 
 //
 // Special local variables used when defining FAT dir entries.
 //
-// Valid only within the context of a SINGLE FAT_DIR_ENTRY creation,
+// Valid only within the context of a SINGLE FAT_DIRECTORY_ENTRY creation,
 // (which is really a conceptual entry, as could include many LFN).
 // Required because the "directory entry set" may not be contiguous
 // (e.g., may start and end in different, non-contiguous clusters).
 //
 // New design?
 //     define structure holding these three entries
-//     at start of FAT_DIR_ENTRY, allocate a local variable of this type
+//     at start of FAT_DIRECTORY_ENTRY, allocate a local variable of this type
 //     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
 //     RESULT: clearer code 
 //
@@ -1248,14 +1248,14 @@ typedef struct
     //       e.g., create \Level1\Level2\Level3\, each with files before and after the subdirectory.
     FSeek( XYZZY_FATDirEntryEnd );
 
-} FAT_DIR_ENTRY <read=ReadFAT_DIR_ENTRY>;
+} FAT_DIRECTORY_ENTRY <read=ReadFAT_DIRECTORY_ENTRY>;
 
 // Show file name beside directory entry
 int ReadFAT_SHORTENTRY_IsDeleted( FAT_SHORTENTRY &f )
 {
     return (uchar)f.Name[0] == 0xE5;
 }
-int ReadFAT_DIR_ENTRY_IsDeleted( FAT_DIR_ENTRY &f )
+int ReadFAT_DIRECTORY_ENTRY_IsDeleted( FAT_DIRECTORY_ENTRY &f )
 {
     if( exists( f.long_entry ) )
     {
@@ -1270,7 +1270,7 @@ int ReadFAT_DIR_ENTRY_IsDeleted( FAT_DIR_ENTRY &f )
         return 0;
     }
 }
-int ReadFAT_DIR_ENTRY_IsDirectory( FAT_DIR_ENTRY &f )
+int ReadFAT_DIRECTORY_ENTRY_IsDirectory( FAT_DIRECTORY_ENTRY &f )
 {
     if ( exists( f.short_entry ) )
     {
@@ -1282,7 +1282,7 @@ int ReadFAT_DIR_ENTRY_IsDirectory( FAT_DIR_ENTRY &f )
     }
 }
 
-wstring ReadFAT_DIR_ENTRY_LongFilename( FAT_DIR_ENTRY &f )
+wstring ReadFAT_DIRECTORY_ENTRY_LongFilename( FAT_DIRECTORY_ENTRY &f )
 {
     if ( !exists( f.long_entry ) ) return "";
 
@@ -1330,7 +1330,7 @@ wstring ReadFAT_DIR_ENTRY_LongFilename( FAT_DIR_ENTRY &f )
     return filename;    
 }
 
-wstring ReadFAT_DIR_ENTRY( FAT_DIR_ENTRY &f )
+wstring ReadFAT_DIRECTORY_ENTRY( FAT_DIRECTORY_ENTRY &f )
 {
     local unsigned short i;
     local unsigned short NumberOfLFNEntry;
@@ -1339,7 +1339,7 @@ wstring ReadFAT_DIR_ENTRY( FAT_DIR_ENTRY &f )
 
     if ( exists( f.long_entry ) )
     {
-        filename = ReadFAT_DIR_ENTRY_LongFilename(f);
+        filename = ReadFAT_DIRECTORY_ENTRY_LongFilename(f);
     }
     else if ( exists (f.short_entry) )
     {
@@ -1355,11 +1355,11 @@ wstring ReadFAT_DIR_ENTRY( FAT_DIR_ENTRY &f )
     {
         attributeInfo = " (" + ReadFAT_ATTR_TYPE(f.short_entry.Attribute) + ")";
     }
-    if ( ReadFAT_DIR_ENTRY_IsDirectory(f) )
+    if ( ReadFAT_DIRECTORY_ENTRY_IsDirectory(f) )
     {
         filename = "/" + filename;
     }
-    if (ReadFAT_DIR_ENTRY_IsDeleted(f))
+    if (ReadFAT_DIRECTORY_ENTRY_IsDeleted(f))
     {
         return "**Erased name '" + filename + "'" + attributeInfo;
     }
@@ -1438,7 +1438,7 @@ typedef struct
     XYZZY_FATDirEntryStart = FTell();
     while(1)
     {
-        FAT_DIR_ENTRY direntry;
+        FAT_DIRECTORY_ENTRY direntry;
         if (exists(direntry.short_entry) && direntry.short_entry.Name[0] == 0) // End of Directory Entry
             break;
         FSeek( XYZZY_FATDirEntryStart ); // needed for non-contiguous directories
