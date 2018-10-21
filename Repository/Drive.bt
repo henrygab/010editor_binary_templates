@@ -1028,7 +1028,7 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 {
     return (DWORD)((address - drive[DriveNum].DataAreaFilePos) / drive[DriveNum].ClusterSize) + 2;
 }
-s
+
 //
 // UPDATED BY:
 //       FAT_CheckDirEntryRead(), called after each non-local FAT_DIRECTORY_ENTRY_SET
