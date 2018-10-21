@@ -1,9 +1,39 @@
-
+// FAT16: Maximum entries defined by bpb_fat16 MaxRootDirEntries
+// ... CONTIGUOUS - NO FAT CHAIN EXISTS ...
+//
+// FAT32: Maximum entries defined by cluster chain
+// ... starting at RootDirEntryFilePos ... (aka same as subdirectories)
+//
+// SUBDIRECTORIES: maximum entries defined by cluster chain
+// 
+// BUGS:
+//    FAT16/FAT32 - fails when last direntry in cluster is in use
+//                  because it tries to follow the cluster chain,
+//                  which has an EOC marker....
+// 
+// TODO: Annotate function FAT_CheckDirEntryRead...
+//       second test in IF() statement avoids using cluster
+//       chain for FAT16's root directory, by checking if
+//       the current position is before DataAreaFilePos.
+//       But it's not documented this is WHY that check exists,
+//       and it's quite a hack...
+// TODO: set SizeFAT_FILE_DATA() to 512 (not 1024)
+//
+// Thoughts on how to fix the above:
+// 1. FAT_FILE_DATA properly parses the amount of valid data...
+// 1a. Thought about just using the parent FAT_FILE_DATA.
+//     But that doesn't exist in the parent for the root directory.
+//     so parentof(this).xxx won't currently work.
+// 1b. Thought about adding a FAT_FILE_DATA to the root directories
+//     to cover the FAT, thus allowing use of parent FAT_FILE_DATA.
+//     That structure is hard-coded such that it won't work:
+//       parentof(this).short_entry.FileSizeInBytes
+//    
+//
 
 [ ] add exFAT?
 
-
-
+[ ] todo: collapse consecutive VolumeID entries
 
 [ ] Full support for FAT32 on >512 byte sectors
 
@@ -48,6 +78,16 @@ if (SectorHasBpbSignature()) {
 //     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
 //     RESULT: clearer code 
 //
+
+<local UQUAD XYZZY_FATDirEntryStart;
+<local UQUAD XYZZY_FATDirEntryEnd; // end of contiguous area
+<local WORD  XYZZY_FATIsDirEntryContiguous;
+>local UQUAD XYZZY_FATDirEntry_Start;
+>local UQUAD XYZZY_FATDirEntry_End; // end of contiguous area
+>local WORD  XYZZY_FATDirEntry_IsContiguous;
+
+
+
 
 [ ] Rename FAT_DIR_ENTRY to FAT_DIRECTORY_ENTRY_SET
 
@@ -143,5 +183,7 @@ if (SectorHasBpbSignature()) {
     FAT32_MEDIATYPE      ==> FAT32_MEDIA_TYPE     , with prefix FAT32_MEDIATYPE_
     FAT32_PARTITIONSTATE ==> FAT32_PARTITION_STATE, with prefix FAT32_PARTITION_
     FAT32_CLUSTERINFO    ==> FAT32_CLUSTER_INFO   , with prefix FAT32_CLUSTER_
+
+
 
 
