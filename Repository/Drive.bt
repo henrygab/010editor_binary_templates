@@ -13,7 +13,7 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
-//   2.1   2018-10-13 HenryGab: Modify display of FAT so FAT chains are more easily followed.
+//   2.1   2018-10-13 HenryGab: Fix various bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
 //   1.1   2016-06-14 SweetScape Software: Added support for EFI partitions.
 //   1.0   2016-05-13 SweetScape Software: Added NTFS support,
