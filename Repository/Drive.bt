@@ -1028,18 +1028,18 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 {
     return (DWORD)((address - drive[DriveNum].DataAreaFilePos) / drive[DriveNum].ClusterSize) + 2;
 }
-
+s
 //
 // UPDATED BY:
-//       FAT_CheckDirEntryRead(), called after each non-local FAT_DIRECTORY_ENTRY
-//       - sets XYZZY_FATDirEntryEnd   to current position (if contiguous aka still in original cluster)
-//       - sets XYZZY_FATDirEntryStart to current position (always)
-//       - when XYZZY_FATDirEntryStart hits next cluster:
-//         sets XYZZY_FATIsDirEntryContiguous to false
-//         sets XYZZY_FATDirEntryStart to 
+//       FAT_CheckDirEntryRead(), called after each non-local FAT_DIRECTORY_ENTRY_SET
+//       - sets XYZZY_End   to current position (if contiguous aka still in original cluster)
+//       - sets XYZZY_Start to current position (always)
+//       - when XYZZY_Start hits next cluster:
+//         sets XYZZY_IsFirstCluster to false
+//         sets XYZZY_Start to 
 //
-//       FAT_DIRECTORY_ENTRY()
-//       - sets XYZZY_FATDirEntryEnd to FTell() at start of a new FAT_DIRECTORY_ENTRY
+//       FAT_DIRECTORY_ENTRY_SET()
+//       - sets XYZZY_End to FTell() at start of a new FAT_DIRECTORY_ENTRY_SET
 //
 //       FAT_DIRECTORY()
 //       - 
@@ -1048,47 +1048,47 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 //       FAT_CheckDirEntryRead()
 //       - all three valriables used/updated
 //
-//       FAT_DIRECTORY_ENTRY()
-//       - sets XYZZY_FATDirEntryEnd to FTell() at start
-//       - seeks to XYZZY_FATDirEntryEnd 
+//       FAT_DIRECTORY_ENTRY_SET()
+//       - sets XYZZY_End to FTell() at start
+//       - seeks to XYZZY_End 
 //
 // Special local variables used when defining FAT dir entries.
 //
-// Valid only within the context of a SINGLE FAT_DIRECTORY_ENTRY creation,
+// Valid only within the context of a SINGLE FAT_DIRECTORY_ENTRY_SET creation,
 // (which is really a conceptual entry, as could include many LFN).
 // Required because the "directory entry set" may not be contiguous
 // (e.g., may start and end in different, non-contiguous clusters).
 //
 // New design?
 //     define structure holding these three entries
-//     at start of FAT_DIRECTORY_ENTRY, allocate a local variable of this type
+//     at start of FAT_DIRECTORY_ENTRY_SET, allocate a local variable of this type
 //     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
 //     RESULT: clearer code 
 //
-local UQUAD XYZZY_FATDirEntryStart;
-local UQUAD XYZZY_FATDirEntryEnd; // end of contiguous area
-local WORD  XYZZY_FATIsDirEntryContiguous;
+local UQUAD XYZZY_Start;
+local UQUAD XYZZY_End; // end of contiguous area
+local WORD  XYZZY_IsFirstCluster;
 
 // Check for directory reads that go off the end of a cluster -
 //  need to jump to the next cluster if so
 void FAT_CheckDirEntryRead( int DriveNum )
 {
     // Record positions
-    if( XYZZY_FATIsDirEntryContiguous )
-        XYZZY_FATDirEntryEnd = FTell();
-    XYZZY_FATDirEntryStart = FTell();
-    if( ((XYZZY_FATDirEntryStart - drive[DriveNum].DataAreaFilePos) % drive[DriveNum].ClusterSize == 0) &&
-        (XYZZY_FATDirEntryStart > drive[DriveNum].DataAreaFilePos) )
+    if( XYZZY_IsFirstCluster )
+        XYZZY_End = FTell();
+    XYZZY_Start = FTell();
+    if( ((XYZZY_Start - drive[DriveNum].DataAreaFilePos) % drive[DriveNum].ClusterSize == 0) &&
+        (XYZZY_Start > drive[DriveNum].DataAreaFilePos) )
     {
-        XYZZY_FATIsDirEntryContiguous = false; // really means more than one cluster....
+        XYZZY_IsFirstCluster = false; // really means more than one cluster....
         // Hit the end of the cluster
         // Must jump to the next cluster
-        local DWORD Cluster = FAT_AddressToCluster( XYZZY_FATDirEntryStart, DriveNum );
+        local DWORD Cluster = FAT_AddressToCluster( XYZZY_Start, DriveNum );
         Cluster -= 1; // current position is actually in next cluster,
         // so use prior cluster number  
         Cluster = drive[DriveNum].table.Cluster[ Cluster ];
         FAT_JumpToCluster( Cluster, DriveNum );
-        XYZZY_FATDirEntryStart = FTell();
+        XYZZY_Start = FTell();
     }
 }
 FAT_ATTR_TYPE FAT_DirectoryEntryType( int64 directoryEntryStart )
@@ -1119,8 +1119,8 @@ typedef struct
     local int   isOrphan = 0;
 
     // Read Long/Short directory entries
-    XYZZY_FATDirEntryEnd = FTell();
-    XYZZY_FATIsDirEntryContiguous = true;
+    XYZZY_End = FTell();
+    XYZZY_IsFirstCluster = true;
     
     local int tmp = FAT_IsDirectoryEntryLFN(FTell());
 
@@ -1243,19 +1243,19 @@ typedef struct
             }
         }
     }
-    // TODO: Determine if there is a bug here, related to the global variable XYZZY_FATDirEntryEnd.
+    // TODO: Determine if there is a bug here, related to the global variable XYZZY_End.
     //       This seems likely, when two nested directories each take >1 cluster (e.g., txFAT).
     //       e.g., create \Level1\Level2\Level3\, each with files before and after the subdirectory.
-    FSeek( XYZZY_FATDirEntryEnd );
+    FSeek( XYZZY_End );
 
-} FAT_DIRECTORY_ENTRY <read=ReadFAT_DIRECTORY_ENTRY>;
+} FAT_DIRECTORY_ENTRY_SET <read=ReadFAT_DIRECTORY_ENTRY_SET>;
 
 // Show file name beside directory entry
 int ReadFAT_SHORTENTRY_IsDeleted( FAT_SHORTENTRY &f )
 {
     return (uchar)f.Name[0] == 0xE5;
 }
-int ReadFAT_DIRECTORY_ENTRY_IsDeleted( FAT_DIRECTORY_ENTRY &f )
+int ReadFAT_DIRECTORY_ENTRY_SET_IsDeleted( FAT_DIRECTORY_ENTRY_SET &f )
 {
     if( exists( f.long_entry ) )
     {
@@ -1270,7 +1270,7 @@ int ReadFAT_DIRECTORY_ENTRY_IsDeleted( FAT_DIRECTORY_ENTRY &f )
         return 0;
     }
 }
-int ReadFAT_DIRECTORY_ENTRY_IsDirectory( FAT_DIRECTORY_ENTRY &f )
+int ReadFAT_DIRECTORY_ENTRY_SET_IsDirectory( FAT_DIRECTORY_ENTRY_SET &f )
 {
     if ( exists( f.short_entry ) )
     {
@@ -1282,7 +1282,7 @@ int ReadFAT_DIRECTORY_ENTRY_IsDirectory( FAT_DIRECTORY_ENTRY &f )
     }
 }
 
-wstring ReadFAT_DIRECTORY_ENTRY_LongFilename( FAT_DIRECTORY_ENTRY &f )
+wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
 {
     if ( !exists( f.long_entry ) ) return "";
 
@@ -1330,7 +1330,7 @@ wstring ReadFAT_DIRECTORY_ENTRY_LongFilename( FAT_DIRECTORY_ENTRY &f )
     return filename;    
 }
 
-wstring ReadFAT_DIRECTORY_ENTRY( FAT_DIRECTORY_ENTRY &f )
+wstring ReadFAT_DIRECTORY_ENTRY_SET( FAT_DIRECTORY_ENTRY_SET &f )
 {
     local unsigned short i;
     local unsigned short NumberOfLFNEntry;
@@ -1339,7 +1339,7 @@ wstring ReadFAT_DIRECTORY_ENTRY( FAT_DIRECTORY_ENTRY &f )
 
     if ( exists( f.long_entry ) )
     {
-        filename = ReadFAT_DIRECTORY_ENTRY_LongFilename(f);
+        filename = ReadFAT_DIRECTORY_ENTRY_SET_LongFilename(f);
     }
     else if ( exists (f.short_entry) )
     {
@@ -1355,11 +1355,11 @@ wstring ReadFAT_DIRECTORY_ENTRY( FAT_DIRECTORY_ENTRY &f )
     {
         attributeInfo = " (" + ReadFAT_ATTR_TYPE(f.short_entry.Attribute) + ")";
     }
-    if ( ReadFAT_DIRECTORY_ENTRY_IsDirectory(f) )
+    if ( ReadFAT_DIRECTORY_ENTRY_SET_IsDirectory(f) )
     {
         filename = "/" + filename;
     }
-    if (ReadFAT_DIRECTORY_ENTRY_IsDeleted(f))
+    if (ReadFAT_DIRECTORY_ENTRY_SET_IsDeleted(f))
     {
         return "**Erased name '" + filename + "'" + attributeInfo;
     }
@@ -1435,13 +1435,13 @@ typedef struct
     local int DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
 
     // Define all file entries
-    XYZZY_FATDirEntryStart = FTell();
+    XYZZY_Start = FTell();
     while(1)
     {
-        FAT_DIRECTORY_ENTRY direntry;
+        FAT_DIRECTORY_ENTRY_SET direntry;
         if (exists(direntry.short_entry) && direntry.short_entry.Name[0] == 0) // End of Directory Entry
             break;
-        FSeek( XYZZY_FATDirEntryStart ); // needed for non-contiguous directories
+        FSeek( XYZZY_Start ); // needed for non-contiguous directories
     }
 } FAT_DIRECTORY <size=SizeFAT_DIRECTORY>;
 
