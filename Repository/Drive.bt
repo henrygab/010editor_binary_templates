@@ -1422,11 +1422,11 @@ typedef struct
 } FAT_FILE_DATA <size=SizeFAT_FILE_DATA>;
 
 // Use on-demand parsing for file data - do not load the data until the hierarchy is opened.
-//  By default we just assume this is 1024 in length because the actual data may not
-//  be contiguous on disk.
+//  By default we just assume this is 512 in length because the actual data may not
+//  be contiguous on disk, and this is the smallest supported sector size.
 int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 {
-    return 1024;
+    return 512;
 }
 
 // FAT Directory Entry List
@@ -1446,11 +1446,11 @@ typedef struct
 } FAT_DIRECTORY <size=SizeFAT_DIRECTORY>;
 
 // Use on-demand parsing for directories - do not load the data until the hierarchy is opened.
-//  By default we just assume this is 1024 in length because the actual data may not
-//  be contiguous on disk.
+//  By default we just assume this is 512 in length because the actual data may not
+//  be contiguous on disk, and 512 is the smallest supported sector size.
 int SizeFAT_DIRECTORY( FAT_DIRECTORY &dir )
 {
-    return 1024;
+    return 512;
 }
 
 //################################################################
