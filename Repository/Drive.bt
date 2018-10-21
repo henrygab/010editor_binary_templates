@@ -1077,6 +1077,9 @@ void FAT_CheckDirEntryRead( int DriveNum )
     if( XYZZY_IsFirstCluster )
         XYZZY_End = FTell();
     XYZZY_Start = FTell();
+    // the second condition of this IF() statement was added to allow FAT16 root directory
+    // to be processed, because the FAT16 root directory is contiguous and outside the
+    // normal set of clusters (and thus has a hard-coded maximum entry count at format time).
     if( ((XYZZY_Start - drive[DriveNum].DataAreaFilePos) % drive[DriveNum].ClusterSize == 0) &&
         (XYZZY_Start > drive[DriveNum].DataAreaFilePos) )
     {
@@ -1087,6 +1090,13 @@ void FAT_CheckDirEntryRead( int DriveNum )
         Cluster -= 1; // current position is actually in next cluster,
         // so use prior cluster number  
         Cluster = drive[DriveNum].table.Cluster[ Cluster ];
+        // BUG IS HERE -- when last entry is used, this seek(s) to invalid location
+        //                but also need to prevent caller(s) from attempting to add
+        //                additional entries in the first place when there is no
+        //                more valid data.  Thus, concept of "remaining valid bytes"
+        //                must be added to this entire call chain ... which itself
+        //                requires multiple modifications.
+        //               
         FAT_JumpToCluster( Cluster, DriveNum );
         XYZZY_Start = FTell();
     }
