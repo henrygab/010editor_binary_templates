@@ -10,26 +10,53 @@
 //    FAT16/FAT32 - fails when last direntry in cluster is in use
 //                  because it tries to follow the cluster chain,
 //                  which has an EOC marker....
-// 
-// TODO: Annotate function FAT_CheckDirEntryRead...
-//       second test in IF() statement avoids using cluster
-//       chain for FAT16's root directory, by checking if
-//       the current position is before DataAreaFilePos.
-//       But it's not documented this is WHY that check exists,
-//       and it's quite a hack...
-// TODO: set SizeFAT_FILE_DATA() to 512 (not 1024)
 //
 // Thoughts on how to fix the above:
 // 1. FAT_FILE_DATA properly parses the amount of valid data...
+//
 // 1a. Thought about just using the parent FAT_FILE_DATA.
 //     But that doesn't exist in the parent for the root directory.
 //     so parentof(this).xxx won't currently work.
+//
 // 1b. Thought about adding a FAT_FILE_DATA to the root directories
 //     to cover the FAT, thus allowing use of parent FAT_FILE_DATA.
 //     That structure is hard-coded such that it won't work:
 //       parentof(this).short_entry.FileSizeInBytes
-//    
 //
+// 1c. Current thought:
+//     PREREQ: Can template struct take a structure ref parameter?
+//     ANSWER: Yes.  See EXE.bt @ 358 (IMAGE_SECTION_HEADER)
+//
+//     [ ] Add struct FILE_EXTENT ( uint64 start_position, uint64 valid_bytes )
+//
+//     [ ] Add struct to hold context needed to properly parse the directory:
+//             struct FAT_DIRECTORY_CONTEXT (
+//                 String parentPath; // useful to validate maximum length also
+//                 int DriveNum;
+//                 FILE_EXTENT[] extents;
+//                 ??? FAT table pointer ???;
+//                 DWORD maximumExtent;
+//             };
+//
+//     [ ] Add function to fill in the FILE_EXTENT [] extents
+//         using the FAT cluster tables.
+//
+//     [ ] Create FAT_DIRECTORY2 struct...
+//         [ ] takes FAT_DIRECTORY_CONTEXT &context, and uses
+//             this structure (and only this structure) to know
+//             where and how much valid data is available for
+//             the directory structure.
+//         [ ] recursively calls itself when needing a subdirectory.
+//         
+//     [ ] Update FAT16 root directory to use FAT_DIRECTORY2 structure
+//         (manually set the FILE_EXTENT to a single entry for the FAT)\
+//
+//     [ ] Update FAT32 root directory to use FAT_DIRECTORY2 structure
+//         (obtain the FILE_EXTENT using the FAT chains)
+//
+//
+//
+
 
 [ ] add exFAT?
 
