@@ -599,6 +599,9 @@ typedef struct
     local quad  RootDirEntryFilePos;
     local quad  DataAreaSector;
     local quad  VolumeStartPosition=FTell();
+    local DWORD MaxValidCluster;
+
+
 
     // FAT16 Boot sector
     FAT16_BOOTSECTOR boot_fat16 <bgcolor=cLtPurple>;
@@ -615,6 +618,7 @@ typedef struct
 	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
     ClusterSize           = BytesPerSector     * boot_fat16.bpb_fat16.SectorsPerCluster;
     ClusterEntrySize      = 2;
+    MaxValidCluster       = 0xFFEF;
     
     // FAT16 FAT Table
     FSeek( FATTableFilePos );
@@ -782,6 +786,7 @@ typedef struct
     local quad  RootDirEntryFilePos;
     local quad  DataAreaSector;
     local quad  VolumeStartPosition=FTell();
+    local DWORD MaxValidCluster;
 
     // FAT32 Boot sector
     FAT32_BOOTSECTOR boot_fat32 <bgcolor=cLtPurple>;
@@ -798,6 +803,7 @@ typedef struct
 	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
     ClusterSize           = BytesPerSector * boot_fat32.bpb_fat32.SectorsPerCluster;
     ClusterEntrySize      = 4;
+    MaxValidCluster       = 0x0FFFFFEF;
 
     // FAT32 FAT Table
     FSeek( FATTableFilePos );
@@ -1030,31 +1036,21 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 }
 
 //
-// UPDATED BY:
-//       FAT_CheckDirEntryRead(), called after each non-local FAT_DIRECTORY_ENTRY_SET
-//       - sets XYZZY_End   to current position (if contiguous aka still in original cluster)
-//       - sets XYZZY_Start to current position (always)
-//       - when XYZZY_Start hits next cluster:
-//         sets XYZZY_IsFirstCluster to false
-//         sets XYZZY_Start to 
+// NOTE: THIS IS A HACK.  Looking at the code, it would
+//       appear that there is a major bug where a subdirectory
+//       would overwrite these variables, and then the parent
+//       directory would end up in an entirely wrong location.
 //
-//       FAT_DIRECTORY_ENTRY_SET()
-//       - sets XYZZY_End to FTell() at start of a new FAT_DIRECTORY_ENTRY_SET
-//
-//       FAT_DIRECTORY()
-//       - 
-//
-// USED BY:
-//       FAT_CheckDirEntryRead()
-//       - all three valriables used/updated
-//
-//       FAT_DIRECTORY_ENTRY_SET()
-//       - sets XYZZY_End to FTell() at start
-//       - seeks to XYZZY_End 
+//       What's the hack?
+//       FAT_DIRECTORY is an "On-Demand" structure, which isn't
+//       actually parsed until the user expands the node.
+//       Therefore, the variables here are only used within a
+//       single FAT_DIRECTORY context at any time.
+//       Nice hack.  Just wish it had been documented.
 //
 // Special local variables used when defining FAT dir entries.
 //
-// Valid only within the context of a SINGLE FAT_DIRECTORY_ENTRY_SET creation,
+// Valid only within the context of a SINGLE FAT_DIRECTORY creation,
 // (which is really a conceptual entry, as could include many LFN).
 // Required because the "directory entry set" may not be contiguous
 // (e.g., may start and end in different, non-contiguous clusters).
@@ -1071,7 +1067,7 @@ local WORD  XYZZY_IsFirstCluster;
 
 // Check for directory reads that go off the end of a cluster -
 //  need to jump to the next cluster if so
-void FAT_CheckDirEntryRead( int DriveNum )
+int FAT_CheckDirEntryRead( int DriveNum )
 {
     // Record positions
     if( XYZZY_IsFirstCluster )
@@ -1081,25 +1077,28 @@ void FAT_CheckDirEntryRead( int DriveNum )
     // to be processed, because the FAT16 root directory is contiguous and outside the
     // normal set of clusters (and thus has a hard-coded maximum entry count at format time).
     if( ((XYZZY_Start - drive[DriveNum].DataAreaFilePos) % drive[DriveNum].ClusterSize == 0) &&
-        (XYZZY_Start > drive[DriveNum].DataAreaFilePos) )
+        (XYZZY_Start > drive[DriveNum].DataAreaFilePos) ) // HACK - FAT16 root is contiguous and not in FAT table
+        // BUGBUG -- FAT16 may have a bug when root directory is full (last entry in use)
     {
         XYZZY_IsFirstCluster = false; // really means more than one cluster....
         // Hit the end of the cluster
-        // Must jump to the next cluster
+        // Must jump to the next cluster ....
         local DWORD Cluster = FAT_AddressToCluster( XYZZY_Start, DriveNum );
-        Cluster -= 1; // current position is actually in next cluster,
+        
+        // current position is actually in next cluster,
         // so use prior cluster number  
+        Cluster -= 1;
+        // get the next cluster from the FAT table
         Cluster = drive[DriveNum].table.Cluster[ Cluster ];
-        // BUG IS HERE -- when last entry is used, this seek(s) to invalid location
-        //                but also need to prevent caller(s) from attempting to add
-        //                additional entries in the first place when there is no
-        //                more valid data.  Thus, concept of "remaining valid bytes"
-        //                must be added to this entire call chain ... which itself
-        //                requires multiple modifications.
-        //               
+        // exit with status 0 if this is the end of the FAT chain
+        if( (Cluster < 2) || (Cluster > drive[DriveNum].MaxValidCluster)) {
+            return 1; //signal to caller this is the end of the record
+        }
+        // else jump to the next cluster and continue
         FAT_JumpToCluster( Cluster, DriveNum );
         XYZZY_Start = FTell();
     }
+    return 0;
 }
 FAT_ATTR_TYPE FAT_DirectoryEntryType( int64 directoryEntryStart )
 {
@@ -1126,7 +1125,9 @@ typedef struct
     local int   DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
     local int   i;
     local DWORD Cluster;
-    local int   isOrphan = 0;
+    local uchar is_orphan = 0;
+    local uchar is_complete = 0;
+    local uchar end_of_fat_chain = 0;
 
     // Read Long/Short directory entries
     XYZZY_End = FTell();
@@ -1155,7 +1156,11 @@ typedef struct
                     // Every time add a directory entry, also must check and adjust
                     // file position for cluster boundary, following FAT chain
                     FAT_LONGENTRY long_entry;
-                    FAT_CheckDirEntryRead( DriveNum );
+                    end_of_fat_chain = FAT_CheckDirEntryRead( DriveNum );
+                    if (end_of_fat_chain)
+                    {
+                        is_orphan |= 0x01;
+                    }
                 }
             }
             else
@@ -1163,36 +1168,40 @@ typedef struct
                 // Every time add a directory entry, also must check and adjust
                 // file position for cluster boundary, following FAT chain
                 FAT_LONGENTRY long_entry;
-                FAT_CheckDirEntryRead( DriveNum );
+                end_of_fat_chain = FAT_CheckDirEntryRead( DriveNum );
 
                 NumberOfLFNEntry = long_entry.LFN.LFN_RecordSeqNum.LFN_RecSeqNum;
 
                 local unsigned char expectedLfnEntry = NumberOfLFNEntry;
-                for( i = 1; i < NumberOfLFNEntry; i++)
+                for( i = 1; (!end_of_fat_chain) && (i < NumberOfLFNEntry); i++)
                 {
                     expectedLfnEntry -= 1;
 
                     // Have to read LFN entry here to verify number!
                     if ( !FAT_IsDirectoryEntryLFN(FTell()) )
                     {
-                        isOrphan |= 0x10;
+                        is_orphan |= 0x10;
                         break;
                     }
                     if ( ReadByte() != expectedLfnEntry )
                     {
-                        isOrphan |= 0x20;
+                        is_orphan |= 0x20;
                         break;
                     } 
                     
                     // Every time add a directory entry, also must check and adjust
                     // file position for cluster boundary, following FAT chain
                     FAT_LONGENTRY long_entry;
-                    FAT_CheckDirEntryRead( DriveNum );
+                    end_of_fat_chain = FAT_CheckDirEntryRead( DriveNum );
+                    if (end_of_fat_chain)
+                    {
+                        is_orphan |= 0x02;
+                    }
 
                     // if the LFN entry number does not match, mark this directory entry set as "ORPHANED"
                     if ( long_entry[i].LFN.LFN_RecordSeqNum.LFN_RecSeqNum != expectedLfnEntry )
                     {
-                        isOrphan |= 0x40;
+                        is_orphan |= 0x40;
                         break;
                     }
                 }
@@ -1202,21 +1211,21 @@ typedef struct
         // Long entries should be followed by a short entry with file info
         if ( FAT_IsDirectoryEntryLFN(FTell()) )
         {
-            isOrphan |= 0x01;
+            is_orphan |= 0x01;
         }
         // else if (!validate_LFN_CRC())
         // {
         //     TODO: compute checksum from next directory entry, ensure it matches LFN entries
         //           if they do not match, the LFN entries are orphans....
-        //     isOrphan |= 0x02;
+        //     is_orphan |= 0x80;
         // }
         
-        if (!isOrphan) // only attach the short directory entry if the LFN entries are not orphaned.
+        if (!is_orphan) // only attach the short directory entry if the LFN entries are not orphaned.
         {
             // Every time add a directory entry, also must check and adjust
             // file position for cluster boundary, following FAT chain
             FAT_SHORTENTRY short_entry;
-            FAT_CheckDirEntryRead( DriveNum );
+            end_of_fat_chain = FAT_CheckDirEntryRead( DriveNum );
         }
     }
     else // first entry is not LFN entry
@@ -1224,15 +1233,15 @@ typedef struct
         // Every time add a directory entry, also must check and adjust
         // file position for cluster boundary, following FAT chain
         FAT_SHORTENTRY short_entry;
-        FAT_CheckDirEntryRead( DriveNum );
+        end_of_fat_chain = FAT_CheckDirEntryRead( DriveNum );
     }
 
     // Check for file data or subdirectory
     if( exists(short_entry) )
     {
-        // assert( !isOrphan );
+        // assert( !is_orphan );
         Cluster = FAT_CalculateCluster( short_entry, DriveNum );
-        if( Cluster > 0 )
+        if( Cluster > 2 )
         {
             // Define data for this file
             FAT_JumpToCluster( Cluster, DriveNum );
@@ -1253,6 +1262,7 @@ typedef struct
             }
         }
     }
+    local int64 myEnd = XYZZY_End;
     // TODO: Determine if there is a bug here, related to the global variable XYZZY_End.
     //       This seems likely, when two nested directories each take >1 cluster (e.g., txFAT).
     //       e.g., create \Level1\Level2\Level3\, each with files before and after the subdirectory.
@@ -1310,7 +1320,7 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
         }
         NumberOfLFNEntries = i;
     }
-    else if ( f.isOrphan )
+    else if ( f.is_orphan )
     {
         NumberOfLFNEntries = 0; // f.long_entry[i].length; // TODO: handle orphan entries more naturally
     }
@@ -1373,7 +1383,7 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET( FAT_DIRECTORY_ENTRY_SET &f )
     {
         return "**Erased name '" + filename + "'" + attributeInfo;
     }
-    if (f.isOrphan)
+    if (f.is_orphan)
     {
         return "**Orphaned LFN entries '" + filename + "'" + attributeInfo;
     }
@@ -1409,7 +1419,7 @@ typedef struct
     local DWORD  ClusterEntrySize = drive[DriveNum].ClusterEntrySize;
     local DWORD  Cluster          = FAT_CalculateCluster( parentof(this).short_entry, DriveNum );
     local DWORD  FirstCluster     = Cluster;
-    local DWORD  MaxCluster       = (ClusterEntrySize == 2) ? 0xFFF0 : 0x0FFFFFF0;
+    local DWORD  MaxValidCluster  = drive[DriveNum].MaxValidCluster;
     local ULONG  SizeLeft         = parentof(this).short_entry.FileSizeInBytes;
 
     // Define clusters
@@ -1450,6 +1460,8 @@ typedef struct
     {
         FAT_DIRECTORY_ENTRY_SET direntry;
         if (exists(direntry.short_entry) && direntry.short_entry.Name[0] == 0) // End of Directory Entry
+            break;
+        if (direntry.end_of_fat_chain) // end of the FAT chain, without an End-of-Directory Entry
             break;
         FSeek( XYZZY_Start ); // needed for non-contiguous directories
     }
