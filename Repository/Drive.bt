@@ -1036,12 +1036,13 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 }
 
 //
-// NOTE: THIS IS A HACK.  Looking at the code, it would
+// NOTE: *** THIS IS A HACK. *** Looking at the code, it would
 //       appear that there is a major bug where a subdirectory
 //       would overwrite these variables, and then the parent
 //       directory would end up in an entirely wrong location.
 //
-//       What's the hack?
+//       So... what's the hack?
+//
 //       FAT_DIRECTORY is an "On-Demand" structure, which isn't
 //       actually parsed until the user expands the node.
 //       Therefore, the variables here are only used within a
@@ -1050,16 +1051,11 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 //
 // Special local variables used when defining FAT dir entries.
 //
-// Valid only within the context of a SINGLE FAT_DIRECTORY creation,
-// (which is really a conceptual entry, as could include many LFN).
-// Required because the "directory entry set" may not be contiguous
-// (e.g., may start and end in different, non-contiguous clusters).
-//
-// New design?
-//     define structure holding these three entries
-//     at start of FAT_DIRECTORY_ENTRY_SET, allocate a local variable of this type
-//     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
-//     RESULT: clearer code 
+// These XYZZY_* variables are valid only within the context of
+// a SINGLE FAT_DIRECTORY creation, which typically spans multiple
+// FAT_DIRECTORY_ENTRY_SETs, each of which may include many
+// directory entries of 0x20 bytes each.  These variables hold
+// state used to handle cluster-spanning entries, etc.
 //
 local UQUAD XYZZY_Start;
 local UQUAD XYZZY_End; // end of contiguous area
@@ -1450,6 +1446,9 @@ int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 }
 
 // FAT Directory Entry List
+// HACKHACK -- This structure ***MUST*** be an "On-Demand" structure.
+//             Therefore, do ***NOT*** set this to default to open.
+//             See additional notes next to declaration of the XYZZY_* variables.
 typedef struct
 {
     local int DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
