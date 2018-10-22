@@ -1,66 +1,24 @@
-// FAT16: Maximum entries defined by bpb_fat16 MaxRootDirEntries
-// ... CONTIGUOUS - NO FAT CHAIN EXISTS ...
-//
-// FAT32: Maximum entries defined by cluster chain
-// ... starting at RootDirEntryFilePos ... (aka same as subdirectories)
-//
-// SUBDIRECTORIES: maximum entries defined by cluster chain
-// 
-// BUGS:
-//    FAT16/FAT32 - fails when last direntry in cluster is in use
-//                  because it tries to follow the cluster chain,
-//                  which has an EOC marker....
-//
-// Thoughts on how to fix the above:
-// 1. FAT_FILE_DATA properly parses the amount of valid data...
-//
-// 1a. Thought about just using the parent FAT_FILE_DATA.
-//     But that doesn't exist in the parent for the root directory.
-//     so parentof(this).xxx won't currently work.
-//
-// 1b. Thought about adding a FAT_FILE_DATA to the root directories
-//     to cover the FAT, thus allowing use of parent FAT_FILE_DATA.
-//     That structure is hard-coded such that it won't work:
-//       parentof(this).short_entry.FileSizeInBytes
-//
-// 1c. Current thought:
-//     PREREQ: Can template struct take a structure ref parameter?
-//     ANSWER: Yes.  See EXE.bt @ 358 (IMAGE_SECTION_HEADER)
-//
-//     [ ] Add struct FILE_EXTENT ( uint64 start_position, uint64 valid_bytes )
-//
-//     [ ] Add struct to hold context needed to properly parse the directory:
-//             struct FAT_DIRECTORY_CONTEXT (
-//                 String parentPath; // useful to validate maximum length also
-//                 int DriveNum;
-//                 FILE_EXTENT[] extents;
-//                 ??? FAT table pointer ???;
-//                 DWORD maximumExtent;
-//             };
-//
-//     [ ] Add function to fill in the FILE_EXTENT [] extents
-//         using the FAT cluster tables.
-//
-//     [ ] Create FAT_DIRECTORY2 struct...
-//         [ ] takes FAT_DIRECTORY_CONTEXT &context, and uses
-//             this structure (and only this structure) to know
-//             where and how much valid data is available for
-//             the directory structure.
-//         [ ] recursively calls itself when needing a subdirectory.
-//         
-//     [ ] Update FAT16 root directory to use FAT_DIRECTORY2 structure
-//         (manually set the FILE_EXTENT to a single entry for the FAT)\
-//
-//     [ ] Update FAT32 root directory to use FAT_DIRECTORY2 structure
-//         (obtain the FILE_EXTENT using the FAT chains)
-//
-//
-//
+###########################################################
+[ ] add exFAT partition type
 
+[ ] Update DRIVE_NOT_SUPPORTED union with exFAT
 
-[ ] add exFAT?
+###########################################################
+[ ] Add FAT12 partition type
+
+[ ] FAT12 should likely use BitFieldDisablePadding()
+    and BitFieldEnablePadding() to read FAT entries
+    as a stream of bits....
+
+[ ] Update DRIVE_NOT_SUPPORTED union with FAT12
+
+###########################################################
+[ ] verify CRC of LFN matches CRC of short name entry, else
+    consider the LFN entries as orphaned.
 
 [ ] todo: collapse consecutive VolumeID entries
+
+[ ] Full support for FAT16 on >512 byte sectors
 
 [ ] Full support for FAT32 on >512 byte sectors
 
@@ -84,84 +42,19 @@ if (SectorHasBpbSignature()) {
     }
 }
 
-
-[ ] Remove global state from FAT_DIR_ENTRY
-//
-// UPDATED BY:
-//       FAT_CheckDirEntryRead()
-// USED BY:
-//       FAT_DIR_ENTRY() - to finish at proper location in file
-//
-// Special local variables used when defining FAT dir entries.
-//
-// Valid only within the context of a SINGLE FAT_DIR_ENTRY creation,
-// (which is really a conceptual entry, as could include many LFN).
-// Required because the "directory entry set" may not be contiguous
-// (e.g., may start and end in different, non-contiguous clusters).
-//
-// New design:
-//     define structure holding these three entries
-//     at start of FAT_DIR_ENTRY, allocate a local variable of this type
-//     Modify  FAT_CheckDirEntryRead() to take this structure as an argument
-//     RESULT: clearer code 
-//
-
-<local UQUAD XYZZY_FATDirEntryStart;
-<local UQUAD XYZZY_FATDirEntryEnd; // end of contiguous area
-<local WORD  XYZZY_FATIsDirEntryContiguous;
->local UQUAD XYZZY_FATDirEntry_Start;
->local UQUAD XYZZY_FATDirEntry_End; // end of contiguous area
->local WORD  XYZZY_FATDirEntry_IsContiguous;
-
-
-
-
-[ ] Rename FAT_DIR_ENTRY to FAT_DIRECTORY_ENTRY_SET
-
-
-###########################################################
-[ ] Add FAT12 partition type
-
-[ ] FAT12 should likely use BitFieldDisablePadding()
-    and BitFieldEnablePadding() to read FAT entries
-    as a stream of bits....
-###########################################################
-
-[ ] FAT_JumpToCluster()
-[ ] FAT_AddressToCluster()
-
-[ ] rename 'cluster' to 'cluster number' or
-    'cluster index' as appropriate throughout
-
 ###########################################################
 ###########################################################
-
-[ ] fix tLFN_RecordSeqNum to reflect below logic
-    for handling LFN entries....
-
-[ ] Ensure check for LFN entry...
-    1. check if attributes & 0x3F == 0x0F
-    2. check if byte[0] (LDIR_Ord) != 0xE5 ("last" dir entry)
-    3. if byte[0] & 0x40 == 0x40
-       a. if already started LFN, mark old LFN as "orphans"
-          and discard them...
-       b. set var remaining_lfn_entries = byte[0] & 0x0F
-       c. allocate space for remaining_lfn_entries * 13 characters
-    4. if remaining_lfn_entries > 0
-       a. extract characters into the temporary LFN name buffer
-          starting at index = remaining_lfn_entries * 13
-
 
 [ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12
 
-
 ###########################################################
 ###########################################################
 ###########################################################
 
-[x] fix FAT_DIR_ENTRY struct also...
 [x] fix FAT directory entry attribute FAT_ATTR_TYPE
     to match specification.
+
+[x] fix FAT_DIR_ENTRY struct also...
 
 [x] fix readFAT_SHORTENTRY() to handle when
     first character == 0x05 --> converts to
@@ -171,7 +64,7 @@ if (SectorHasBpbSignature()) {
     upper bits of the attribute flags are set
     (e.g., mask with 0x3F ... ??)
 
-[x] <format=hex>
+[x] Default to Hexadecimal display for many values <format=hex>
 
 [x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
 
@@ -181,11 +74,10 @@ if (SectorHasBpbSignature()) {
 
 [x] begin initial support for non-512 sectors sizes for FAT32
 
-[x] Detect and handle some types of orphaned LFN entries (sequence number)
+[x] BUGFIX - Handle many orphaned LFN entries (sequence number).
     NOTE: Does not yet check CRC of short-entry name against LFN values.
 
-[x] Fix data corruption regression (off-by-two error) caused by earlier
-    changes to include indices 0 and 1 in FAT table.
+[*] Fix regression caused by earlier FAT Table changes
 
 [x] Add a number of utility functions to simplify code:
     ReadFAT_SHORTENTRY_Filename
@@ -197,7 +89,7 @@ if (SectorHasBpbSignature()) {
     ReadFAT_DIR_ENTRY_IsDirectory
     ReadFAT_DIR_ENTRY_LongFilename
 
-[x] Fixes to displayed filenames in many cases.
+[x] BUGFIX - Fix displayed filenames (e.g., trim shortname)
 
 [x] Add FAT_ATTR_ prefix to FAT_ATTR_TYPE enumeration values.
     This helps avoid naming conflicts, especially where these attributes
@@ -211,6 +103,7 @@ if (SectorHasBpbSignature()) {
     FAT32_PARTITIONSTATE ==> FAT32_PARTITION_STATE, with prefix FAT32_PARTITION_
     FAT32_CLUSTERINFO    ==> FAT32_CLUSTER_INFO   , with prefix FAT32_CLUSTER_
 
+[x] Rename FAT_DIR_ENTRY to FAT_DIRECTORY_ENTRY_SET
 
-
-
+[x] BUGFIX - when the last direntry in the last cluster is in use
+    v2.0 tries to follow the cluster chain, which has an EOC marker....
