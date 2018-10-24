@@ -3,7 +3,7 @@
 //
 //      File: Drive.bt
 //   Authors: SweetScape Software, Benjamin Vernoux
-//   Version: 2.1
+//   Version: 2.2
 //   Purpose: Parse logical and physical drives including 
 //            MBR, FAT16, FAT32, HFS, NTFS and extended partitions.
 //            Can display subdirectories and data for individual
@@ -13,6 +13,7 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
+//   2.2   2018-10-23 HenryGab: Fix FAT16 root directory bug.
 //   2.1   2018-10-13 HenryGab: Fix multiple bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
 //   1.1   2016-06-14 SweetScape Software: Added support for EFI partitions.
@@ -1069,12 +1070,17 @@ int FAT_CheckDirEntryRead( int DriveNum )
     if( XYZZY_IsFirstCluster )
         XYZZY_End = FTell();
     XYZZY_Start = FTell();
+
+    if (XYZZY_Start == drive[DriveNum].DataAreaFilePos) {
+        // HACK for FAT16 root directory ... when it reaches DataAreaFilePos, treat as end-of-cluster
+        return 1;
+    }
+
     // the second condition of this IF() statement was added to allow FAT16 root directory
     // to be processed, because the FAT16 root directory is contiguous and outside the
     // normal set of clusters (and thus has a hard-coded maximum entry count at format time).
     if( ((XYZZY_Start - drive[DriveNum].DataAreaFilePos) % drive[DriveNum].ClusterSize == 0) &&
         (XYZZY_Start > drive[DriveNum].DataAreaFilePos) ) // HACK - FAT16 root is contiguous and not in FAT table
-        // BUGBUG -- FAT16 may have a bug when root directory is full (last entry in use)
     {
         XYZZY_IsFirstCluster = false; // really means more than one cluster....
         // Hit the end of the cluster
