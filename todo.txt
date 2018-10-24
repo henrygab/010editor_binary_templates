@@ -1,0 +1,109 @@
+###########################################################
+[ ] add exFAT partition type
+
+[ ] Update DRIVE_NOT_SUPPORTED union with exFAT
+
+###########################################################
+[ ] Add FAT12 partition type
+
+[ ] FAT12 should likely use BitFieldDisablePadding()
+    and BitFieldEnablePadding() to read FAT entries
+    as a stream of bits....
+
+[ ] Update DRIVE_NOT_SUPPORTED union with FAT12
+
+###########################################################
+[ ] verify CRC of LFN matches CRC of short name entry, else
+    consider the LFN entries as orphaned.
+
+[ ] todo: collapse consecutive VolumeID entries
+
+[ ] Full support for FAT16 on >512 byte sectors
+
+[ ] Full support for FAT32 on >512 byte sectors
+
+[ ] If two FATs exist, highlight non-matching entries in RED
+
+[ ] Fix FAT type detection:
+CountOfClusters := count of *DATA* clusters
+                   starting at cluster 2
+                   (the first data cluster)
+Thus, maximum "cluster number" is CountOfClusters + 1
+
+if (SectorHasBpbSignature()) {
+    if (CountofClusters < 4085) && hasFat12Bpb()) {
+        /* Volume is FAT12 */
+    } else if ((CountofClusters < 65525) && hasFat16Bpb()) {
+        /* Volume is FAT16 */
+    } else if (hasExfatBpb()) {
+        /* Volume is exFAT */
+    } else if (hasFat32Bpb()) {
+        /* Volume is FAT32 */
+    }
+}
+
+###########################################################
+###########################################################
+
+[ ] Update DRIVE_NOT_SUPPORTED union with exFAT and/or FAT12
+
+###########################################################
+###########################################################
+###########################################################
+
+[x] fix FAT directory entry attribute FAT_ATTR_TYPE
+    to match specification.
+
+[x] fix FAT_DIR_ENTRY struct also...
+
+[x] fix readFAT_SHORTENTRY() to handle when
+    first character == 0x05 --> converts to
+    KANJI lead byte value 0xE5 (valid in Japan)
+
+[x] fix readFAT_SHORTENTRY() to handle when
+    upper bits of the attribute flags are set
+    (e.g., mask with 0x3F ... ??)
+
+[x] Default to Hexadecimal display for many values <format=hex>
+
+[x] Add <read=ReadFAT16_CLUSTERINFO> to show hex for special values
+
+[x] Add <read=ReadFAT32_CLUSTERINFO> to show hex for special values
+
+[x] Clarify number of entries per FAT
+
+[x] begin initial support for non-512 sectors sizes for FAT32
+
+[x] BUGFIX - Handle many orphaned LFN entries (sequence number).
+    NOTE: Does not yet check CRC of short-entry name against LFN values.
+
+[*] Fix regression caused by earlier FAT Table changes
+
+[x] Add a number of utility functions to simplify code:
+    ReadFAT_SHORTENTRY_Filename
+    FAT_DirectoryEntryType         (masks to valid bits only)
+    FAT_IsDirectoryEntryLFN
+    FAT_IsDirectoryEntryVolumeID   (excludes LFN entries)
+    ReadFAT_SHORTENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDeleted
+    ReadFAT_DIR_ENTRY_IsDirectory
+    ReadFAT_DIR_ENTRY_LongFilename
+
+[x] BUGFIX - Fix displayed filenames (e.g., trim shortname)
+
+[x] Add FAT_ATTR_ prefix to FAT_ATTR_TYPE enumeration values.
+    This helps avoid naming conflicts, especially where these attributes
+    included such common names as "system".
+
+[x] Change additional enum values to have a prefix (help avoid naming conflicts).
+    FAT16_MEDIATYPE      ==> FAT16_MEDIA_TYPE     , with prefix FAT16_MEDIATYPE_
+    FAT16_PARTITIONSTATE ==> FAT16_PARTITION_STATE, with prefix FAT16_PARTITION_
+    FAT16_CLUSTERINFO    ==> FAT16_CLUSTER_INFO   , with prefix FAT16_CLUSTER_
+    FAT32_MEDIATYPE      ==> FAT32_MEDIA_TYPE     , with prefix FAT32_MEDIATYPE_
+    FAT32_PARTITIONSTATE ==> FAT32_PARTITION_STATE, with prefix FAT32_PARTITION_
+    FAT32_CLUSTERINFO    ==> FAT32_CLUSTER_INFO   , with prefix FAT32_CLUSTER_
+
+[x] Rename FAT_DIR_ENTRY to FAT_DIRECTORY_ENTRY_SET
+
+[x] BUGFIX - when the last direntry in the last cluster is in use
+    v2.0 tries to follow the cluster chain, which has an EOC marker....
