@@ -13,6 +13,7 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
+//   2.4   2018-11-xx HenryGab: Fix file system recognition sequence, support partition-less media
 //   2.2   2018-10-23 HenryGab: Fix multiple bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
 //   1.1   2016-06-14 SweetScape Software: Added support for EFI partitions.
@@ -41,184 +42,184 @@ local int NumDrives = 0;
 // Partition Types
 typedef enum <uchar>
 {
-   EMPTY                          = 0,
-   FAT_12                         = 1,
-   XENIX_ROOT                     = 2,
-   XENIX_USR                      = 3,
-   FAT_16_INF32MB                 = 4,
-   EXTENDED                       = 5,
-   FAT_16                         = 6,
-   NTFS_HPFS                      = 7,
-   AIX                            = 8,
-   AIX_BOOT                       = 9,
-   OS2_BOOT_MGR                   = 10,
-   PRI_FAT32_INT13                = 11,
-   EXT_FAT32_INT13                = 12,
-   SILICON_SAFE                   = 13,
-   EXT_FAT16_INT13                = 14,
-   WIN95_EXT_PARTITION            = 15,
-   OPUS                           = 16,
-   FAT_12_HIDDEN                  = 17,
-   COMPAQ_DIAG                    = 18,
-   FAT_16_HIDDEN_INF32MB          = 20,
-   FAT_16_HIDDEN                  = 22,
-   NTFS_HPFS_HIDDEN               = 23,
-   AST_SMARTSLEEP_PARTITION       = 24,
-   OSR2_FAT32                     = 27,
-   OSR2_FAT32_LBA                 = 28,
-   HIDDEN_FAT16_LBA               = 30,
-   NEC_DOS                        = 36,
-   PQSERVICE_ROUTERBOOT           = 39,
-   ATHEOS_FILE_SYSTEM             = 42,
-   NOS                            = 50,
-   JFS_ON_OS2_OR_ECS              = 53,
-   THEOS_2GB                      = 56,
-   PLAN_9_THEOS_SPANNED           = 57,
-   THEOS_4GB                      = 58,
-   THEOS_EXTENDED                 = 59,
-   PARTITIONMAGIC_RECOVERY        = 60,
-   HIDDEN_NETWARE                 = 61,
-   VENIX                          = 64,
-   LINUX_PPC_PREP                 = 65,
-   LINUX_SWAP                     = 66,
-   LINUX_NATIVE                   = 67,
-   GOBACK                         = 68,
-   BOOT_US_EUMEL_ELAN             = 69,
-   EUMEL_ELAN_1                   = 70,
-   EUMEL_ELAN_2                   = 71,
-   EUMEL_ELAN_3                   = 72,
-   OBERON                         = 76,
-   QNX4_X                         = 77,
-   QNX4_X_2ND_PART                = 78,
-   QNX4_X_3RD_PART_OBERON         = 79,
-   ONTRACK_LYNX_OBERON            = 80,
-   ONTRACK_NOVELL                 = 81,
-   CP_M_MICROPORT_SYSV_AT         = 82,
-   DISK_MANAGER_AUX3              = 83,
-   DISK_MANAGER_DDO               = 84,
-   EZ_DRIVE                       = 85,
-   GOLDEN_BOW_EZ_BIOS             = 86,
-   DRIVEPRO_VNDI                  = 87,
-   PRIAM_EDISK                    = 92,
-   SPEEDSTOR                      = 97,
-   GNU_HURD                       = 99,
-   NOVEL1                         = 100,
-   NETWARE_386                    = 101,
-   NETWARE_SMS_PARTITION          = 102,
-   NOVELL_1                       = 103,
-   NOVELL_2                       = 104,
-   NETWARE_NSS                    = 105,
-   DISKSECURE_MULTI_BOOT          = 112,
-   V7_X86                         = 114,
-   PC_IX                          = 117,
-   M2FS_M2CS_VNDI                 = 119,
-   XOSL_FS                        = 120,
-   MINUX_OLD                      = 128,
-   MINUX_LINUX                    = 129,
-   LINUX_SWAP_2                   = 130,
-   LINUX_NATIVE_2                 = 131,
-   OS2_HIDDEN_HIBERNATION         = 132,
-   LINUX_EXTENDED                 = 133,
-   OLD_LINUX_RAID_FAT16           = 134,
-   NTFS_VOLUME_SET                = 135,
-   LINUX_PLAINTEXT_TABLE          = 136,
-   LINUX_KERNEL_AIR_BOOT          = 138,
-   FAULT_TOLERANT_FAT32           = 139,
-   FAULT_TOLERANT_FAT32_INT13H    = 140,
-   FREE_FDISK_FAT12               = 141,
-   LINUX_LOGICAL_VOLUME_MANAGER   = 142,
-   FREE_FDISK_PRIMARY_FAT16       = 144,
-   FREE_FDISK_EXTENDED            = 145,
-   FREE_FDISK_LARGE_FAT16         = 146,
-   AMOEBA                         = 147,
-   AMOEBA_BBT                     = 148,
-   MIT_EXOPC                      = 149,
-   CHRP_ISO_9660                  = 150,
-   FREE_FDISK_FAT32               = 151,
-   FREE_FDISK_FAT32_LBA           = 152,
-   DCE376                         = 153,
-   FREE_FDISK_FAT16_LBA           = 154,
-   FREE_FDISK_EXTENDED_LBA        = 155,
-   FORTHOS                        = 158,
-   BSD_OS                         = 159,
-   LAPTOP_HIBERNATION             = 160,
-   LAPTOP_HIBERNATION_HP          = 161,
-   HP_EXPANSION_SPEEDSTOR_1       = 163,
-   HP_EXPANSION_SPEEDSTOR_2       = 164,
-   BSD_386                        = 165,
-   OPENBSD_SPEEDSTOR              = 166,
-   NEXTSTEP                       = 167,
-   MAC_OS_X                       = 168,
-   NETBSD                         = 169,
-   OLIVETTI                       = 170,
-   MAC_OS_X_BOOT_GO               = 171,
-   RISC_OS_ADFS                   = 173,
-   SHAGOS                         = 174,
-   SHAGOS_SWAP_MACOS_X_HFS        = 175,
-   BOOTSTAR_DUMMY                 = 176,
-   HP_EXPANSION_QNX               = 177,
-   QNX_POWER_SAFE                 = 178,
-   HP_EXPANSION_QNX_2             = 179,
-   HP_EXPANSION_SPEEDSTOR_3       = 180,
-   HP_EXPANSION_FAT16             = 182,
-   BSDI_FS                        = 183,
-   BSDI_SWAP                      = 184,
-   BOOT_WIZARD_HIDDEN             = 187,
-   ACRONIS_BACKUP                 = 188,
-   BONNYDOS_286                   = 189,
-   SOLARIS_8_BOOT                 = 190,
-   NEW_SOLARIS                    = 191,
-   CTOS_REAL_32_DR_DOS            = 192,
-   DRDOS_SECURED                  = 193,
-   HIDDEN_LINUX_SWAP              = 195,
-   DRDOS_SECURED_FAT16            = 196,
-   DRDOS_SECURED_EXTENDED         = 197,
-   DRDOS_SECURED_FAT16_STRIPE     = 198,
-   SYRINX                         = 199,
-   DR_DOS_8_1                     = 200,
-   DR_DOS_8_2                     = 201,
-   DR_DOS_8_3                     = 202,
-   DR_DOS_7_SECURED_FAT32_CHS     = 203,
-   DR_DOS_7_SECURED_FAT32_LBA     = 204,
-   CTOS_MEMDUMP                   = 205,
-   DR_DOS_7_FAT16X                = 206,
-   DR_DOS_7_SECURED_EXT_DOS       = 207,
-   REAL_32_SECURE                 = 208,
-   OLD_MULTIUSER_FAT12            = 209,
-   OLD_MULTIUSER_FAT16            = 212,
-   OLD_MULTIUSER_EXTENDED         = 213,
-   OLD_MULTIUSER_FAT16_2          = 214,
-   CP_M_86                        = 216,
-   NON_FS_DATA_POWERCOPY_BACKUP   = 218,
-   CP_M                           = 219,
-   HIDDEN_CTOS_MEMDUMP            = 221,
-   DELL_POWEREDGE_UTIL            = 222,
-   DG_UX_DISK_MANAGER_BOOTIT      = 223,
-   ACCESS_DOS                     = 225,
-   DOS_R_O                        = 227,
-   SPEEDSTOR_FAT16_EXTENDED       = 228,
-   STORAGE_DIMENSIONS_SPEEDSTOR   = 230,
-   LUKS                           = 232,
-   RUFUS_EXTRA_FREEDESKTOP        = 234,
-   BEOS_BFS                       = 235,
-   SKYOS_SKYFS                    = 236,
-   LEGACY_MBR_EFI_HEADER          = 238,
-   EFI_FS                         = 239,
-   LINUX_PA_RISC_BOOT             = 240,
-   STORAGE_DIMENSIONS_SPEEDSTOR_2 = 241,
-   DOS_SECONDARY                  = 242,
-   SPEEDSTOR_LARGE_PROLOGUE       = 244,
-   PROLOGUE_MULTI_VOLUME          = 245,
-   STORAGE_DIMENSIONS_SPEEDSTOR_3 = 246,
-   DDRDRIVE_SOLID_STATE_FS        = 247,
-   PCACHE                         = 249,
-   BOCHS                          = 250,
-   VMWARE_FILE_SYSTEM             = 251,
-   VMWARE_SWAP                    = 252,
-   LINUX_RAID                     = 253,
-   SPEEDSTOR_LANSTEP_LINUX        = 254,
-   BBT                            = 255,
-} SYSTEMID <format=hex>;
+   PARTITION_SYSTEMID_EMPTY                          = 0,
+   PARTITION_SYSTEMID_FAT_12                         = 1,
+   PARTITION_SYSTEMID_XENIX_ROOT                     = 2,
+   PARTITION_SYSTEMID_XENIX_USR                      = 3,
+   PARTITION_SYSTEMID_FAT_16_INF32MB                 = 4,
+   PARTITION_SYSTEMID_EXTENDED                       = 5,
+   PARTITION_SYSTEMID_FAT_16                         = 6,
+   PARTITION_SYSTEMID_NTFS_HPFS                      = 7,
+   PARTITION_SYSTEMID_AIX                            = 8,
+   PARTITION_SYSTEMID_AIX_BOOT                       = 9,
+   PARTITION_SYSTEMID_OS2_BOOT_MGR                   = 10,
+   PARTITION_SYSTEMID_PRI_FAT32_INT13                = 11,
+   PARTITION_SYSTEMID_EXT_FAT32_INT13                = 12,
+   PARTITION_SYSTEMID_SILICON_SAFE                   = 13,
+   PARTITION_SYSTEMID_EXT_FAT16_INT13                = 14,
+   PARTITION_SYSTEMID_WIN95_EXT_PARTITION            = 15,
+   PARTITION_SYSTEMID_OPUS                           = 16,
+   PARTITION_SYSTEMID_FAT_12_HIDDEN                  = 17,
+   PARTITION_SYSTEMID_COMPAQ_DIAG                    = 18,
+   PARTITION_SYSTEMID_FAT_16_HIDDEN_INF32MB          = 20,
+   PARTITION_SYSTEMID_FAT_16_HIDDEN                  = 22,
+   PARTITION_SYSTEMID_NTFS_HPFS_HIDDEN               = 23,
+   PARTITION_SYSTEMID_AST_SMARTSLEEP_PARTITION       = 24,
+   PARTITION_SYSTEMID_OSR2_FAT32                     = 27,
+   PARTITION_SYSTEMID_OSR2_FAT32_LBA                 = 28,
+   PARTITION_SYSTEMID_HIDDEN_FAT16_LBA               = 30,
+   PARTITION_SYSTEMID_NEC_DOS                        = 36,
+   PARTITION_SYSTEMID_PQSERVICE_ROUTERBOOT           = 39,
+   PARTITION_SYSTEMID_ATHEOS_FILE_SYSTEM             = 42,
+   PARTITION_SYSTEMID_NOS                            = 50,
+   PARTITION_SYSTEMID_JFS_ON_OS2_OR_ECS              = 53,
+   PARTITION_SYSTEMID_THEOS_2GB                      = 56,
+   PARTITION_SYSTEMID_PLAN_9_THEOS_SPANNED           = 57,
+   PARTITION_SYSTEMID_THEOS_4GB                      = 58,
+   PARTITION_SYSTEMID_THEOS_EXTENDED                 = 59,
+   PARTITION_SYSTEMID_PARTITIONMAGIC_RECOVERY        = 60,
+   PARTITION_SYSTEMID_HIDDEN_NETWARE                 = 61,
+   PARTITION_SYSTEMID_VENIX                          = 64,
+   PARTITION_SYSTEMID_LINUX_PPC_PREP                 = 65,
+   PARTITION_SYSTEMID_LINUX_SWAP                     = 66,
+   PARTITION_SYSTEMID_LINUX_NATIVE                   = 67,
+   PARTITION_SYSTEMID_GOBACK                         = 68,
+   PARTITION_SYSTEMID_BOOT_US_EUMEL_ELAN             = 69,
+   PARTITION_SYSTEMID_EUMEL_ELAN_1                   = 70,
+   PARTITION_SYSTEMID_EUMEL_ELAN_2                   = 71,
+   PARTITION_SYSTEMID_EUMEL_ELAN_3                   = 72,
+   PARTITION_SYSTEMID_OBERON                         = 76,
+   PARTITION_SYSTEMID_QNX4_X                         = 77,
+   PARTITION_SYSTEMID_QNX4_X_2ND_PART                = 78,
+   PARTITION_SYSTEMID_QNX4_X_3RD_PART_OBERON         = 79,
+   PARTITION_SYSTEMID_ONTRACK_LYNX_OBERON            = 80,
+   PARTITION_SYSTEMID_ONTRACK_NOVELL                 = 81,
+   PARTITION_SYSTEMID_CP_M_MICROPORT_SYSV_AT         = 82,
+   PARTITION_SYSTEMID_DISK_MANAGER_AUX3              = 83,
+   PARTITION_SYSTEMID_DISK_MANAGER_DDO               = 84,
+   PARTITION_SYSTEMID_EZ_DRIVE                       = 85,
+   PARTITION_SYSTEMID_GOLDEN_BOW_EZ_BIOS             = 86,
+   PARTITION_SYSTEMID_DRIVEPRO_VNDI                  = 87,
+   PARTITION_SYSTEMID_PRIAM_EDISK                    = 92,
+   PARTITION_SYSTEMID_SPEEDSTOR                      = 97,
+   PARTITION_SYSTEMID_GNU_HURD                       = 99,
+   PARTITION_SYSTEMID_NOVELL                         = 100,
+   PARTITION_SYSTEMID_NETWARE_386                    = 101,
+   PARTITION_SYSTEMID_NETWARE_SMS_PARTITION          = 102,
+   PARTITION_SYSTEMID_NOVELL_1                       = 103,
+   PARTITION_SYSTEMID_NOVELL_2                       = 104,
+   PARTITION_SYSTEMID_NETWARE_NSS                    = 105,
+   PARTITION_SYSTEMID_DISKSECURE_MULTI_BOOT          = 112,
+   PARTITION_SYSTEMID_V7_X86                         = 114,
+   PARTITION_SYSTEMID_PC_IX                          = 117,
+   PARTITION_SYSTEMID_M2FS_M2CS_VNDI                 = 119,
+   PARTITION_SYSTEMID_XOSL_FS                        = 120,
+   PARTITION_SYSTEMID_MINUX_OLD                      = 128,
+   PARTITION_SYSTEMID_MINUX_LINUX                    = 129,
+   PARTITION_SYSTEMID_LINUX_SWAP_2                   = 130,
+   PARTITION_SYSTEMID_LINUX_NATIVE_2                 = 131,
+   PARTITION_SYSTEMID_OS2_HIDDEN_HIBERNATION         = 132,
+   PARTITION_SYSTEMID_LINUX_EXTENDED                 = 133,
+   PARTITION_SYSTEMID_OLD_LINUX_RAID_FAT16           = 134,
+   PARTITION_SYSTEMID_NTFS_VOLUME_SET                = 135,
+   PARTITION_SYSTEMID_LINUX_PLAINTEXT_TABLE          = 136,
+   PARTITION_SYSTEMID_LINUX_KERNEL_AIR_BOOT          = 138,
+   PARTITION_SYSTEMID_FAULT_TOLERANT_FAT32           = 139,
+   PARTITION_SYSTEMID_FAULT_TOLERANT_FAT32_INT13H    = 140,
+   PARTITION_SYSTEMID_FREE_FDISK_FAT12               = 141,
+   PARTITION_SYSTEMID_LINUX_LOGICAL_VOLUME_MANAGER   = 142,
+   PARTITION_SYSTEMID_FREE_FDISK_PRIMARY_FAT16       = 144,
+   PARTITION_SYSTEMID_FREE_FDISK_EXTENDED            = 145,
+   PARTITION_SYSTEMID_FREE_FDISK_LARGE_FAT16         = 146,
+   PARTITION_SYSTEMID_AMOEBA                         = 147,
+   PARTITION_SYSTEMID_AMOEBA_BBT                     = 148,
+   PARTITION_SYSTEMID_MIT_EXOPC                      = 149,
+   PARTITION_SYSTEMID_CHRP_ISO_9660                  = 150,
+   PARTITION_SYSTEMID_FREE_FDISK_FAT32               = 151,
+   PARTITION_SYSTEMID_FREE_FDISK_FAT32_LBA           = 152,
+   PARTITION_SYSTEMID_DCE376                         = 153,
+   PARTITION_SYSTEMID_FREE_FDISK_FAT16_LBA           = 154,
+   PARTITION_SYSTEMID_FREE_FDISK_EXTENDED_LBA        = 155,
+   PARTITION_SYSTEMID_FORTHOS                        = 158,
+   PARTITION_SYSTEMID_BSD_OS                         = 159,
+   PARTITION_SYSTEMID_LAPTOP_HIBERNATION             = 160,
+   PARTITION_SYSTEMID_LAPTOP_HIBERNATION_HP          = 161,
+   PARTITION_SYSTEMID_HP_EXPANSION_SPEEDSTOR_1       = 163,
+   PARTITION_SYSTEMID_HP_EXPANSION_SPEEDSTOR_2       = 164,
+   PARTITION_SYSTEMID_BSD_386                        = 165,
+   PARTITION_SYSTEMID_OPENBSD_SPEEDSTOR              = 166,
+   PARTITION_SYSTEMID_NEXTSTEP                       = 167,
+   PARTITION_SYSTEMID_MAC_OS_X                       = 168,
+   PARTITION_SYSTEMID_NETBSD                         = 169,
+   PARTITION_SYSTEMID_OLIVETTI                       = 170,
+   PARTITION_SYSTEMID_MAC_OS_X_BOOT_GO               = 171,
+   PARTITION_SYSTEMID_RISC_OS_ADFS                   = 173,
+   PARTITION_SYSTEMID_SHAGOS                         = 174,
+   PARTITION_SYSTEMID_SHAGOS_SWAP_MACOS_X_HFS        = 175,
+   PARTITION_SYSTEMID_BOOTSTAR_DUMMY                 = 176,
+   PARTITION_SYSTEMID_HP_EXPANSION_QNX               = 177,
+   PARTITION_SYSTEMID_QNX_POWER_SAFE                 = 178,
+   PARTITION_SYSTEMID_HP_EXPANSION_QNX_2             = 179,
+   PARTITION_SYSTEMID_HP_EXPANSION_SPEEDSTOR_3       = 180,
+   PARTITION_SYSTEMID_HP_EXPANSION_FAT16             = 182,
+   PARTITION_SYSTEMID_BSDI_FS                        = 183,
+   PARTITION_SYSTEMID_BSDI_SWAP                      = 184,
+   PARTITION_SYSTEMID_BOOT_WIZARD_HIDDEN             = 187,
+   PARTITION_SYSTEMID_ACRONIS_BACKUP                 = 188,
+   PARTITION_SYSTEMID_BONNYDOS_286                   = 189,
+   PARTITION_SYSTEMID_SOLARIS_8_BOOT                 = 190,
+   PARTITION_SYSTEMID_NEW_SOLARIS                    = 191,
+   PARTITION_SYSTEMID_CTOS_REAL_32_DR_DOS            = 192,
+   PARTITION_SYSTEMID_DRDOS_SECURED                  = 193,
+   PARTITION_SYSTEMID_HIDDEN_LINUX_SWAP              = 195,
+   PARTITION_SYSTEMID_DRDOS_SECURED_FAT16            = 196,
+   PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED         = 197,
+   PARTITION_SYSTEMID_DRDOS_SECURED_FAT16_STRIPE     = 198,
+   PARTITION_SYSTEMID_SYRINX                         = 199,
+   PARTITION_SYSTEMID_DR_DOS_8_1                     = 200,
+   PARTITION_SYSTEMID_DR_DOS_8_2                     = 201,
+   PARTITION_SYSTEMID_DR_DOS_8_3                     = 202,
+   PARTITION_SYSTEMID_DR_DOS_7_SECURED_FAT32_CHS     = 203,
+   PARTITION_SYSTEMID_DR_DOS_7_SECURED_FAT32_LBA     = 204,
+   PARTITION_SYSTEMID_CTOS_MEMDUMP                   = 205,
+   PARTITION_SYSTEMID_DR_DOS_7_FAT16X                = 206,
+   PARTITION_SYSTEMID_DR_DOS_7_SECURED_EXT_DOS       = 207,
+   PARTITION_SYSTEMID_REAL_32_SECURE                 = 208,
+   PARTITION_SYSTEMID_OLD_MULTIUSER_FAT12            = 209,
+   PARTITION_SYSTEMID_OLD_MULTIUSER_FAT16            = 212,
+   PARTITION_SYSTEMID_OLD_MULTIUSER_EXTENDED         = 213,
+   PARTITION_SYSTEMID_OLD_MULTIUSER_FAT16_2          = 214,
+   PARTITION_SYSTEMID_CP_M_86                        = 216,
+   PARTITION_SYSTEMID_NON_FS_DATA_POWERCOPY_BACKUP   = 218,
+   PARTITION_SYSTEMID_CP_M                           = 219,
+   PARTITION_SYSTEMID_HIDDEN_CTOS_MEMDUMP            = 221,
+   PARTITION_SYSTEMID_DELL_POWEREDGE_UTIL            = 222,
+   PARTITION_SYSTEMID_DG_UX_DISK_MANAGER_BOOTIT      = 223,
+   PARTITION_SYSTEMID_ACCESS_DOS                     = 225,
+   PARTITION_SYSTEMID_DOS_R_O                        = 227,
+   PARTITION_SYSTEMID_SPEEDSTOR_FAT16_EXTENDED       = 228,
+   PARTITION_SYSTEMID_STORAGE_DIMENSIONS_SPEEDSTOR   = 230,
+   PARTITION_SYSTEMID_LUKS                           = 232,
+   PARTITION_SYSTEMID_RUFUS_EXTRA_FREEDESKTOP        = 234,
+   PARTITION_SYSTEMID_BEOS_BFS                       = 235,
+   PARTITION_SYSTEMID_SKYOS_SKYFS                    = 236,
+   PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER          = 238,
+   PARTITION_SYSTEMID_EFI_FS                         = 239,
+   PARTITION_SYSTEMID_LINUX_PA_RISC_BOOT             = 240,
+   PARTITION_SYSTEMID_STORAGE_DIMENSIONS_SPEEDSTOR_2 = 241,
+   PARTITION_SYSTEMID_DOS_SECONDARY                  = 242,
+   PARTITION_SYSTEMID_SPEEDSTOR_LARGE_PROLOGUE       = 244,
+   PARTITION_SYSTEMID_PROLOGUE_MULTI_VOLUME          = 245,
+   PARTITION_SYSTEMID_STORAGE_DIMENSIONS_SPEEDSTOR_3 = 246,
+   PARTITION_SYSTEMID_DDRDRIVE_SOLID_STATE_FS        = 247,
+   PARTITION_SYSTEMID_PCACHE                         = 249,
+   PARTITION_SYSTEMID_BOCHS                          = 250,
+   PARTITION_SYSTEMID_VMWARE_FILE_SYSTEM             = 251,
+   PARTITION_SYSTEMID_VMWARE_SWAP                    = 252,
+   PARTITION_SYSTEMID_LINUX_RAID                     = 253,
+   PARTITION_SYSTEMID_SPEEDSTOR_LANSTEP_LINUX        = 254,
+   PARTITION_SYSTEMID_BBT                            = 255,
+} PARTITION_SYSTEMID <format=hex>;
 
 // Media descriptor
 typedef enum <uchar>
@@ -256,7 +257,7 @@ typedef struct
    BOOTINDICATOR BootIndicator;
    UBYTE         StartingHead <format=hex>;
    WORD          StartingSectCylinder <format=hex>;   // Need Bit fields
-   SYSTEMID      SystemID;
+   PARTITION_SYSTEMID SystemID;
    UBYTE         EndingHead <format=hex>;
    WORD          EndingSectCylinder <format=hex>;     // Need Bit fields
    DWORD         RelativeSector <format=hex>;
@@ -820,6 +821,9 @@ typedef struct
 //################################################################
 
 // FAT Directory Attribute
+// BUGBUG -- would prefer to define this as a bitfield, to avoid
+//           forcing all callers to mask the value (which is bug-prone)
+//           unfortunately, this is not an available feature (as of v9.0)
 typedef enum <uchar>
 {
     FAT_ATTR_LongFileNameEntry        = 0x0F, // special case
@@ -852,8 +856,8 @@ typedef enum <uchar>
     FAT_ATTR_Hidden_System_Directory_Archive          = 0x36,
     FAT_ATTR_ReadOnly_Hidden_System_Directory_Archive = 0x37,
 } FAT_ATTR_TYPE <read=ReadFAT_ATTR_TYPE>;
-local const uchar FAT_ATTR_TYPE_RESERVED_MASK = 0xC0;
-local const uchar FAT_ATTR_TYPE_VALID_MASK = 0x3F;
+local const uchar FAT_ATTR_TYPE_RESERVED_MASK <hidden=true> = 0xC0;
+local const uchar FAT_ATTR_TYPE_VALID_MASK <hidden=true> = 0x3F;
 
 
 
@@ -1057,9 +1061,9 @@ DWORD FAT_AddressToCluster( UQUAD address, int DriveNum )
 // directory entries of 0x20 bytes each.  These variables hold
 // state used to handle cluster-spanning entries, etc.
 //
-local UQUAD XYZZY_Start;
-local UQUAD XYZZY_End; // end of contiguous area
-local WORD  XYZZY_IsFirstCluster;
+local UQUAD XYZZY_Start           <hidden=true>;
+local UQUAD XYZZY_End             <hidden=true>; // end of contiguous area
+local WORD  XYZZY_IsFirstCluster  <hidden=true>;
 
 // Check for directory reads that go off the end of a cluster -
 //  need to jump to the next cluster if so
@@ -1925,7 +1929,7 @@ string ReadNTFS_ATTRIBUTE( NTFS_ATTRIBUTE &attr )
 }
 
 // Used to sign-extend run values
-local UQUAD NTFS_SignExtend[8] = { 
+local const UQUAD NTFS_SignExtend[8] <hidden=true> = { 
     0xffffffffffffff00,
     0xffffffffffff0000,
     0xffffffffff000000,
@@ -2776,44 +2780,46 @@ int DriveAlreadyExists( int64 pos )
 }
 
 // Function to detect different types of drives
+// NOTE: uses int instead of PARTITION_SYSTEMID (which is a byte)
+//       to allow callers to indicate 'unknown/undefined' by passing -1.
 int AutoDetectDrive( int SystemID )
 {
     local int   i;
-    local int64 startPos;
+    local int64 startPos <hidden=true>;
 
     // Detect drive by using the SystemID from the partition table
     if( SystemID != -1 )
     {
-        if( (SystemID==FAT_16_INF32MB) ||
-            (SystemID==FAT_16) ||
-            (SystemID==EXT_FAT16_INT13) )
+        if( (SystemID==PARTITION_SYSTEMID_FAT_16_INF32MB) ||
+            (SystemID==PARTITION_SYSTEMID_FAT_16) ||
+            (SystemID==PARTITION_SYSTEMID_EXT_FAT16_INT13) )
         {    
             // Found FAT16 drive
             FAT16_DRIVE drive;
             return true;
         }
-        else if( (SystemID==PRI_FAT32_INT13) ||
-                 (SystemID==EXT_FAT32_INT13) )
+        else if( (SystemID==PARTITION_SYSTEMID_PRI_FAT32_INT13) ||
+                 (SystemID==PARTITION_SYSTEMID_EXT_FAT32_INT13) )
         {
             // Found FAT32 drive
             FAT32_DRIVE drive;
             return true;
         }
-        else if( SystemID==SHAGOS_SWAP_MACOS_X_HFS )
+        else if( SystemID==PARTITION_SYSTEMID_SHAGOS_SWAP_MACOS_X_HFS )
         {
             // Found HFS drive
             HFS_DRIVE drive;
             return true;
         }
-        else if( SystemID==NTFS_HPFS )
+        else if( SystemID==PARTITION_SYSTEMID_NTFS_HPFS )
         {
             // Found NTFS drive
             NTFS_DRIVE drive;
             return true;
         }
-        else if( (SystemID==EXTENDED) ||
-                 (SystemID==WIN95_EXT_PARTITION) ||
-                 (SystemID==DRDOS_SECURED_EXTENDED) )
+        else if( (SystemID==PARTITION_SYSTEMID_EXTENDED) ||
+                 (SystemID==PARTITION_SYSTEMID_WIN95_EXT_PARTITION) ||
+                 (SystemID==PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED) )
         {
             // Extended partition
             startPos = FTell();
@@ -2834,7 +2840,7 @@ int AutoDetectDrive( int SystemID )
             }
             return true;
         }
-        else if( SystemID==LEGACY_MBR_EFI_HEADER )
+        else if( SystemID==PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER )
         {
             // EFI partition
             startPos = FTell();
@@ -2897,13 +2903,14 @@ if( AutoDetectDrive(-1) == false )
     // Auto detect the MBR
     local unsigned short mbr_boot_ok=0;
     local unsigned short i;
-    local uchar BootIndicator, SystemID;
+    local uchar BootIndicator;
+    local PARTITION_SYSTEMID SystemID;
     for(i=0;i<4;i++)
     {
         // Check BootIndicator and SystemID
         BootIndicator = ReadUByte( 0x1BE + i*10h );
         SystemID      = ReadUByte( 0x1C2 + i*10h );
-        if( (BootIndicator==SYSTEM_PARTITION || BootIndicator==NOBOOT) && (SystemID!=EMPTY) )
+        if( (BootIndicator == SYSTEM_PARTITION || BootIndicator == NOBOOT) && (SystemID != PARTITION_SYSTEMID_EMPTY) )
         {
             if(mbr_boot_ok==0)
             {
@@ -2916,13 +2923,17 @@ if( AutoDetectDrive(-1) == false )
             if( !DriveAlreadyExists(FTell()) )
             {
                 if( !AutoDetectDrive( SystemID ) )
+                {
                     DRIVE_NOT_SUPPORTED drive;
+                }
             }
         }
     }
 
     // Could not find MBR - drive is not supported
     if( !mbr_boot_ok )
+    {
         DRIVE_NOT_SUPPORTED drive;
+    }
 }
 
