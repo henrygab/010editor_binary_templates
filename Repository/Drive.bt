@@ -1493,34 +1493,51 @@ struct NTFS_FILE_RECORD;
 // NTFS Boot sector
 struct NTFS_BOOTSECTOR
 {
+    // bytes 0..2
     BYTE   jmp[3];         // Jump Instruction
+    // bytes 3..10
     CHAR   OEMName[8];     // OEM Identifier
-    
-    typedef struct NTFS_BPB
-    {
-        WORD  BytesPerSector;
-        BYTE  SectorsPerCluster;
-        WORD  ReservedSectors;
-        UBYTE Zero[3];
-        WORD  NotUsed;
-        MEDIA MediaDescriptor <format=hex>;
-        WORD  Zero;
-        WORD  SectorsPerTrack;
-        WORD  HeadsPerCylinder;
-        DWORD HiddenSectors;
-        DWORD NotUsed;
-        DWORD NotUsed;
-        UQUAD TotalSectors;
-        UQUAD LogicalClusterMFT;
-        UQUAD LogicalClusterMFTMirror;
-        DWORD ClustersPerFileRecSegment;
-        DWORD ClustersPerIndexBlock;
-        UQUAD SerialNumber <format=hex>;
-        DWORD Checksum;
-    };
-    
-    NTFS_BPB bpb_ntfs;
+    // bytes 11..12
+    WORD   BytesPerSector;
+    // byte  13
+    BYTE   SectorsPerCluster;
+    // bytes 14..15
+    WORD   ReservedSectors;
+    // bytes 16..18
+    UBYTE  Zero[3];
+    // bytes 19..20
+    WORD   NotUsed;
+    // byte  21
+    MEDIA  MediaDescriptor <format=hex>;
+    // bytes 22..23
+    WORD   Zero;
+    // bytes 24..25
+    WORD   SectorsPerTrack;
+    // bytes 26..27
+    WORD   HeadsPerCylinder;
+    // bytes 28..31
+    DWORD  HiddenSectors;
+    // bytes 32..35
+    DWORD  NotUsed;
+    // bytes 36..39
+    DWORD  NotUsed;
+    // bytes 40..47
+    UQUAD  TotalSectors;
+    // bytes 48..55
+    UQUAD  LogicalClusterMFT;
+    // bytes 56..63
+    UQUAD  LogicalClusterMFTMirror;
+    // bytes 64..67
+    DWORD  ClustersPerFileRecSegment;
+    // bytes 68..71
+    DWORD  ClustersPerIndexBlock;
+    // bytes 72..79
+    UQUAD  SerialNumber <format=hex>;
+    // bytes 80..83
+    DWORD  Checksum;
+    // bytes 84..509
     BYTE   BootCode[426];
+    // bytes 510..511
     WORD   EndOfSectorMarker <format=hex>;
 };
 
@@ -2170,8 +2187,8 @@ typedef struct
     NTFS_BOOTSECTOR boot_ntfs <bgcolor=cLtPurple>;
 
     // Master File Table (MFT)
-    ClusterSize = boot_ntfs.bpb_ntfs.BytesPerSector * boot_ntfs.bpb_ntfs.SectorsPerCluster;
-    FSeek( DriveStart + boot_ntfs.bpb_ntfs.LogicalClusterMFT * ClusterSize );
+    ClusterSize = boot_ntfs.BytesPerSector * boot_ntfs.SectorsPerCluster;
+    FSeek( DriveStart + boot_ntfs.LogicalClusterMFT * ClusterSize );
     NTFS_MASTER_FILE_TABLE mft;
 
     // Root directory - jump to '.' in the master file table
