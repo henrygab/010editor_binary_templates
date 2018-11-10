@@ -569,7 +569,7 @@ boolean IsValidIfsBootsector( IFS_BOOTSECTOR &boot) {
     if (boot.MustBeZero[4] != 0) return false;
     if (boot.Length != 24) return false;
     if (boot.Identifier != 0x53525346) return false;
-    if (boot.Checksum != boot.ExpectedChecksum) return false;
+    if (boot.ExpectedChecksum != boot.Checksum) return false;
     return true;
 }
 
@@ -3212,6 +3212,175 @@ typedef union
 //################################################################
 // Detect drive type
 //################################################################
+
+// Call with appropriate enumeration value to limit the types
+// of file systems checked for.  Call with FILE_SYSTEM_TYPE_VALID_MASK
+// to detect any of the supported file systems.
+// Return value is a bit-wise combination of ALL the discovered
+// file system types.
+//
+// HACKHACK: I would use a struct with bitfield enums, but
+//           local structs are not a supported feature as of v9.0.
+
+FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
+{
+    // detect the file system type, using the current position
+    // as the first sector of the volume (e.g., boot sector)
+    local FILE_SYSTEM_TYPE result = FILE_SYSTEM_TYPE_NONE;
+    local int64 startPos = FTell();
+   
+    Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
+
+    // todo: add fs recognition code
+    if (allowedTypes & FILE_SYSTEM_TYPE_EXFAT) {
+        FSeek(startPos);
+        Printf("FSREC      : ? EXFAT_BOOTSECTOR\r\n");
+        EXFAT_BOOTSECTOR exfat_boot <hidden=true>;
+        if (IsValidExfatBootSector(exfat_boot)) {
+            Printf("FSREC      : Valid: exFAT\r\n");
+            result |= FILE_SYSTEM_TYPE_EXFAT;
+        } else {
+            Printf("FSREC      : exFAT not valid\r\n");
+        }
+    }
+    if (allowedTypes & FILE_SYSTEM_TYPE_ANY_FAT_MASK) {
+        FSeek(startPos);
+        Printf("FSREC      : ? FAT_BOOTSECTOR\r\n");
+        FAT_BOOTSECTOR fat_boot <hidden=true>;
+        if (IsValidFatBootSector(fat_boot)) {
+            Printf("FSREC      : Valid: %s\r\n", ReadFILE_SYSTEM_TYPE(fat_boot.FsType));
+            result |= fat_boot.FsType;
+        } else {
+            Printf("FSREC      : FAT12/16/32 not valid\r\n");
+        }
+    }
+    if (allowedTypes & FILE_SYSTEM_TYPE_NTFS) {
+        FSeek(startPos);
+        Printf("FSREC      : ? NTFS_BOOTSECTOR\r\n");
+        NTFS_BOOTSECTOR ntfs_boot <hidden=true>;
+        if (IsValidNtfsBootSector(ntfs_boot)) {
+            Printf("FSREC      : Valid: NTFS\r\n");
+            result |= FILE_SYSTEM_TYPE_NTFS;
+        } else {
+            Printf("FSREC      : NTFS not valid\r\n");
+        }
+    }
+    if (allowedTypes & FILE_SYSTEM_TYPE_HPFS) {
+        Printf("FSREC      : ? HPFS\r\n");
+        if (IsValidHfsBootSector(FTell())) {
+            Printf("FSREC      : Valid: HPFS shown as potentially valid\r\n");
+            result |= FILE_SYSTEM_TYPE_HPFS;
+        } else {
+            Printf("FSREC      : HPFS not valid\r\n");
+        }
+    }
+    if (allowedTypes & FILE_SYSTEM_TYPE_IFS) {
+        FSeek(startPos);
+        Printf("FSREC      : ? IFS_BOOTSECTOR\r\n");
+        IFS_BOOTSECTOR ifs_boot <hidden=true>;
+        if (IsValidIfsBootsector(ifs_boot)){
+            Printf("FSREC      : Valid: IFS\r\n");
+            result |= FILE_SYSTEM_TYPE_IFS;
+        } else {
+            Printf("FSREC      : IFS not valid\r\n");
+        }
+    }
+    Printf("FSREC Exit : startPos = %08x, result == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(result));
+    return result;
+}
+
+// Map from PARTITION_SYSTEMID (which is a byte) to one or more preferred file system types
+// NOTE: uses int instead of PARTITION_SYSTEMID (which is a byte)
+//       to allow callers to indicate 'unknown/undefined' by passing -1.
+FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
+{
+    local FILE_SYSTEM_TYPE preferredType = FILE_SYSTEM_TYPE_NONE;
+
+    switch (SystemID) {
+        // 05h, 0Fh, (15h?,) and C5h are extended partition, handled above
+        case PARTITION_SYSTEMID_FAT_12:                   // 01h
+        case PARTITION_SYSTEMID_FAT_12_HIDDEN:            // 11h -- also FAT16 if supporting "logical sectored FAT"
+        case PARTITION_SYSTEMID_FREE_FDISK_FAT12:         // 8Dh
+        case PARTITION_SYSTEMID_OLIVETTI:                 // AAh
+        case PARTITION_SYSTEMID_SPEEDSTOR_LANSTEP_LINUX:  // FEh
+            preferredType |= FILE_SYSTEM_TYPE_FAT12;
+            break;
+
+        case PARTITION_SYSTEMID_FAT_16_INF32MB:           // 04h
+        case PARTITION_SYSTEMID_EXT_FAT16_INT13:          // 0Eh
+        case PARTITION_SYSTEMID_FAT_16_HIDDEN_INF32MB:    // 14h -- also FAT12 if supporting "logical sectored FAT"
+        case PARTITION_SYSTEMID_FAT_16_HIDDEN:            // 16h
+        case PARTITION_SYSTEMID_HIDDEN_FAT16_LBA:         // 1Eh
+        case 121:                                         // 79h -- TODO: e.g., APTI alternative FAT16
+        case 122:                                         // 7Ah -- TODO: e.g., APTI alternative FAT16
+        case 123:                                         // 7Bh -- TODO: e.g., APTI alternative FAT16B        
+        case PARTITION_SYSTEMID_FREE_FDISK_PRIMARY_FAT16: // 90h
+        case PARTITION_SYSTEMID_FREE_FDISK_LARGE_FAT16:   // 92h
+        case PARTITION_SYSTEMID_FREE_FDISK_FAT16_LBA:     // 9Ah
+        case PARTITION_SYSTEMID_DELL_POWEREDGE_UTIL:      // DEh
+            preferredType |= FILE_SYSTEM_TYPE_FAT16;
+            break;
+
+        case PARTITION_SYSTEMID_FAT_16:                   // 06h
+        case PARTITION_SYSTEMID_OS2_HIDDEN_HIBERNATION:   // 84h
+            preferredType |= FILE_SYSTEM_TYPE_FAT12;
+            preferredType |= FILE_SYSTEM_TYPE_FAT16;
+            break;
+
+        // These partition types were used by "logical sectored FAT" variants
+        // Not having one of these images, I cannot test that this would work.
+        // 
+        // case PARTITION_SYSTEMID_AIX:                      // 08h -- FAT12/FAT16
+        // case PARTITION_SYSTEMID_FAT_12_HIDDEN:            // 11h -- only FAT12 until tested, then add FAT16
+        // case PARTITION_SYSTEMID_FAT_16_HIDDEN_INF32MB:    // 14h -- only FAT16 until tested, then add FAT12
+        // case PARTITION_SYSTEMID_NEC_DOS:                  // 24h -- FAT12/FAT16
+        // case PARTITION_SYSTEMID_GOLDEN_BOW_EZ_BIOS:       // 56h -- FAT12/FAT16
+        // case 229:                                         // E5h -- FAT12/FAT16
+        // case PARTITION_SYSTEMID_DOS_SECONDARY:            // F2h -- FAT12/FAT16
+
+        case PARTITION_SYSTEMID_PRI_FAT32_INT13:          // 0Bh
+        case PARTITION_SYSTEMID_EXT_FAT32_INT13:          // 0Ch
+        case PARTITION_SYSTEMID_OSR2_FAT32:               // 1Bh
+        case PARTITION_SYSTEMID_OSR2_FAT32_LBA:           // 1Ch
+        case 124:                                         // 7Ch -- TODO: e.g., APTI alternative FAT32
+        case 125:                                         // 7Dh -- TODO: e.g., APTI alternative FAT32
+        case PARTITION_SYSTEMID_FREE_FDISK_FAT32:         // 97h
+        case PARTITION_SYSTEMID_CP_M:                     // DBh -- e.g., Dell system restore partition
+            preferredType |= FILE_SYSTEM_TYPE_FAT32;
+            break;
+
+        case PARTITION_SYSTEMID_COMPAQ_DIAG:              // 12h
+        case PARTITION_SYSTEMID_FREE_FDISK_FAT32_LBA:     // 98h -- Not just FAT32...
+        case PARTITION_SYSTEMID_EFI_FS:                   // EFh -- EFI System partition, typically FAT32
+            preferredType |= FILE_SYSTEM_TYPE_ANY_FAT_MASK;
+            preferredType |= FILE_SYSTEM_TYPE_EXFAT;
+            break;
+
+        case PARTITION_SYSTEMID_DDRDRIVE_SOLID_STATE_FS:  // F7h -- e.g., O.S.G. by Natalia Portillo
+            preferredType |= FILE_SYSTEM_TYPE_EXFAT;     
+            break;
+
+        case PARTITION_SYSTEMID_NTFS_HPFS:                // 07h
+        case PARTITION_SYSTEMID_NTFS_HPFS_HIDDEN:         // 17h
+            preferredType |= FILE_SYSTEM_TYPE_NTFS;
+            preferredType |= FILE_SYSTEM_TYPE_HPFS;
+            preferredType |= FILE_SYSTEM_TYPE_EXFAT;      // These partition types are also used for exFAT
+            break;
+
+        case PARTITION_SYSTEMID_PQSERVICE_ROUTERBOOT:     // 27h
+            preferredType |= FILE_SYSTEM_TYPE_NTFS;
+            break;
+
+        case PARTITION_SYSTEMID_SHAGOS_SWAP_MACOS_X_HFS:  // AFh
+            preferredType |= FILE_SYSTEM_TYPE_HPFS;
+            break;
+
+        default:
+            preferredType = FILE_SYSTEM_TYPE_NONE;
+            break;
+    }
+    return preferredType;
+}
 
 // Used to prevent drives from being defined twice - this could
 // happen if a drive is listed in the MBR and the EFI table
