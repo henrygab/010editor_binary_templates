@@ -35,6 +35,13 @@
 LittleEndian(); 
 local int NumDrives = 0;
 
+typedef enum <int> {
+    boolean_false = 0,
+    boolean_true = 1,
+    boolean_true_negative_one = -1,
+    boolean_just_use_true_and_false = 0xbaadf00d
+} boolean;
+
 //################################################################
 // MBR - Master Boot Record (contains partition information)
 //################################################################
