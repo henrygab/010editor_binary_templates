@@ -709,6 +709,12 @@ typedef struct FAT_BOOTSECTOR {
 DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
 {
     if (boot.BytesPerSector == 0) return 0;
+    if (boot.BytesPerSector != 512) { // TODO: Fix 4k native sectors to show correct file data
+        Printf("WARNING: Potentially valid FAT file system at 0x%x.\r\n", startof(boot));
+        Printf("         Shows non-512 bytes per sector (0x%x)\r\n", boot.BytesPerSector);
+        Printf("         Treating as unsupported drive due to known bugs\r\n");
+        return 0; 
+    }
 
     // First, the number of sectors in the special root directory area
     local DWORD  rootDirectoryByteCount = boot.MaxRootDirEntries * 32;
@@ -3396,111 +3402,139 @@ int DriveAlreadyExists( int64 pos )
 //       to allow callers to indicate 'unknown/undefined' by passing -1.
 int AutoDetectDrive( int SystemID )
 {
-    local int   i;
-    local int64 startPos <hidden=true>;
+    local int    i <hidden=true>;
+    local int64  startPos <hidden=true> = FTell();
+    local string SystemIDAsString = ReadPARTITION_SYSTEMID(SystemID);
 
-    // Detect drive by using the SystemID from the partition table
-    if( SystemID != -1 )
+    Printf("ADD() Enter: startPos = %08x, SystemID == %s\r\n", startPos, SystemIDAsString);
+
+    if ( SystemID == 237 )
     {
-        if( (SystemID==PARTITION_SYSTEMID_FAT_16_INF32MB) ||
-            (SystemID==PARTITION_SYSTEMID_FAT_16) ||
-            (SystemID==PARTITION_SYSTEMID_EXT_FAT16_INT13) )
-        {    
-            // Found FAT16 drive
-            FAT16_DRIVE drive;
-            return true;
-        }
-        else if( (SystemID==PARTITION_SYSTEMID_PRI_FAT32_INT13) ||
-                 (SystemID==PARTITION_SYSTEMID_EXT_FAT32_INT13) )
-        {
-            // Found FAT32 drive
-            FAT32_DRIVE drive;
-            return true;
-        }
-        else if( SystemID==PARTITION_SYSTEMID_SHAGOS_SWAP_MACOS_X_HFS )
-        {
-            // Found HFS drive
-            HFS_DRIVE drive;
-            return true;
-        }
-        else if( SystemID==PARTITION_SYSTEMID_NTFS_HPFS )
-        {
-            // Found NTFS drive
-            NTFS_DRIVE drive;
-            return true;
-        }
-        else if( (SystemID==PARTITION_SYSTEMID_EXTENDED) ||
-                 (SystemID==PARTITION_SYSTEMID_WIN95_EXT_PARTITION) ||
-                 (SystemID==PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED) )
-        {
-            // Extended partition
-            startPos = FTell();
-            EXTENDED_PARTITION extended <bgcolor=cLtPurple>;
+        // EDh -- was proposed for GPT hybrid MBR solution, but no idea if used?
+        Printf("ADD() Exit: startPos = %08x, GPT hybrid MBR unsupported\r\n", startPos);
+        DRIVE_NOT_SUPPORTED drive;
+        return;
+    }
 
-            // Find the extended drives
-            for( i = 0; i < 2; i++ )
+    // TODO -- Fill in the below sections marked as "unsupported"?
+    // a number of partition types might initially appear valid,
+    // but could case script to crash.  Feel free to remove those checks,
+    // to allow running FS recognizer on them anyways.
+
+    // Handle partitions that are themselves container partitions
+    if ( (SystemID == 21) ||  // 15h -- TODO: hidden extended partition (CHS)
+         (SystemID == 31) ||  // 1Fh -- TODO: hidden extended partition (LBA)
+         (SystemID == 133) || // 85h -- TODO: Linux extended partition
+         (SystemID == 145) || // 91h -- TODO: Free FDISK extended partition (CHS)
+         (SystemID == PARTITION_SYSTEMID_FREE_FDISK_EXTENDED_LBA) ) // 9Bh
+    {
+        // These partition types are containers of other partitions
+        // but have no test case for them.
+        Printf("ADD() Exit: startPos = %08x, partition type %s unsupported\r\n", startPos, SystemIDAsString);
+        DRIVE_NOT_SUPPORTED drive;
+        return;
+    }
+
+    if ( (SystemID == PARTITION_SYSTEMID_EXTENDED) ||
+         (SystemID == PARTITION_SYSTEMID_WIN95_EXT_PARTITION) ||
+         (SystemID == PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED) )
+    {
+        // Extended partition
+        EXTENDED_PARTITION extended <bgcolor=cLtPurple>;
+
+        // Find the extended drives
+        for( i = 0; i < 2; i++ )
+        {
+            if( extended.partitions[i].SystemID != EMPTY )
             {
-                if( extended.partitions[i].SystemID != EMPTY )
+                local int64 newStart = startPos + extended.partitions[i].RelativeSector*(INT64)512;
+                Printf("ADD()      : checking extended[%d] (%x)\r\n", i, newStart);
+                FSeek( newStart );
+                if( !DriveAlreadyExists(FTell()) )
                 {
-                    FSeek( startPos + extended.partitions[i].RelativeSector*(INT64)512 );
-                    if( !DriveAlreadyExists(FTell()) )
+                    if( !AutoDetectDrive( extended.partitions[i].SystemID ) )
                     {
-                        if( !AutoDetectDrive( extended.partitions[i].SystemID ) )
-                            DRIVE_NOT_SUPPORTED drive;
+                        DRIVE_NOT_SUPPORTED drive;
                     }
                 }
             }
-            return true;
         }
-        else if( SystemID==PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER )
-        {
-            // EFI partition
-            startPos = FTell();
-            EFI_PARTITION efi <bgcolor=cLtPurple>;
-
-            // Find the drives
-            i = 0;
-            while( exists( efi.partitions[i] ) )
-            {
-                FSeek( efi.partitions[i].FirstLBA*512 );
-                if( !AutoDetectDrive( -1 ) )
-                    DRIVE_NOT_SUPPORTED drive;
-                i++;
-            }
-            return true;
-        }
-    }
-
-    // Detect by reading data from the header
-    startPos = FTell();
-    if( ReadString( startPos + 0x36, 8 ) == "FAT16   " )
-    {
-        // Found FAT16 drive
-        FAT16_DRIVE drive;
+        Printf("ADD() Exit: startPos = %08x, extended partitions\r\n", startPos);
         return true;
     }
-    else if( ReadString( startPos + 0x52, 8 ) == "FAT32   " )
+
+    if (SystemID == PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER)  // EEh
     {
-        // Found FAT32 drive
+        // EFI partition
+        EFI_PARTITION efi <bgcolor=cLtPurple>;
+
+        // Find the drives
+        i = 0;
+        while( exists( efi.partitions[i] ) )
+        {
+            local int64 newStart = efi.partitions[i].FirstLBA*512;
+            Printf("ADD()      : checking EFI[%d] (%x)\r\n", i, newStart);
+            FSeek( newStart );
+            if( !AutoDetectDrive( -1 ) )
+            {
+                DRIVE_NOT_SUPPORTED drive;
+            }
+            i++;
+        }
+        Printf("ADD() Exit: startPos = %08x, EFI partitions\r\n", startPos);
+        return true;
+    }
+    local FILE_SYSTEM_TYPE preferredType = PreferredFileSystemTypeFromPartitionSystemID(SystemID);
+
+    // Now loop twice... first for a preferredType of file system
+    // then for any other file system
+    local FILE_SYSTEM_TYPE detected = FileSystemRecognizer(preferredType);
+    FSeek(startPos); // reset after calling FSRec()
+
+    if (detected == FILE_SYSTEM_TYPE_NONE) {
+        Printf("ADD()      : Preferred type not detected, trying other types\r\n");
+        local FILE_SYSTEM_TYPE secondCheck = FILE_SYSTEM_TYPE_VALID_MASK ^ preferredType;
+        detected = FileSystemRecognizer(secondCheck); // try all the other options...
+        FSeek(startPos); // reset after calling FSRec()
+    }
+    Printf("ADD()      : detected %s\r\n", EnumToString(detected));
+    
+    if (detected & FILE_SYSTEM_TYPE_EXFAT) {
+        Printf("ADD()      : adding EXFAT\r\n");
+        EXFAT_BOOTSECTOR boot;
+        return true;
+    } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
+        Printf("ADD()      : adding FAT32\r\n");
         FAT32_DRIVE drive;
         return true;
-    }
-    else if( ReadString( startPos + 0x3, 8 ) == "NTFS    " )
-    {
-        // Found NTFS drive
+    } else if (detected & FILE_SYSTEM_TYPE_FAT16) {
+        Printf("ADD()      : adding FAT16\r\n");
+        FAT16_DRIVE drive;
+        return true;
+//    } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
+//        Printf("ADD()      : adding FAT12\r\n");
+//        FAT12_DRIVE drive;
+//        return true;
+    } else if (detected & FILE_SYSTEM_TYPE_NTFS) {
+        Printf("ADD()      : adding NTFS\r\n");
         NTFS_DRIVE drive;
         return true;
-    }
-    else if( (ReadString( startPos + 1024, 2 ) == "H+") ||
-             (ReadString( startPos + 1024, 2 ) == "HX") )
-    {
-        // Found HFS drive
+    } else if (detected & FILE_SYSTEM_TYPE_HPFS) {
+        Printf("ADD()      : adding HPFS\r\n");
         HFS_DRIVE drive;
         return true;
+//    } else if (detected & FILE_SYSTEM_TYPE_IFS) {
+//        Printf("ADD()      : adding IFS\r\n");
+//        IFS_BOOTSECTOR boot;
+//        return true;
     }
-
     return false; // not found
 }
+
+////////////////////////////////////////////////////////////////////////
+// THIS IS THE ACTUAL STARTING POINT OF EXECUTION IN THE TEMPLATE
+////////////////////////////////////////////////////////////////////////
+
 
 // Check for EndOfSectorMarker (present on MBR/FAT16/FAT32/NTFS)
 if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
@@ -3510,31 +3544,46 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
 }
 
 // Check for different drive types
-if( AutoDetectDrive(-1) == false )
+local boolean AutoDetectDriveResult = AutoDetectDrive(-1);
+if (!AutoDetectDriveResult)
 {
     // Auto detect the MBR
     local unsigned short mbr_boot_ok=0;
     local unsigned short i;
-    local uchar BootIndicator;
-    local PARTITION_SYSTEMID SystemID;
+    local PARTITION_SYSTEMID SystemID[4];
+    local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
+    local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
+    local FILE_SYSTEM_TYPE PreferredFS[4] = { FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE };
     for(i=0;i<4;i++)
     {
         // Check BootIndicator and SystemID
-        BootIndicator = ReadUByte( 0x1BE + i*10h );
-        SystemID      = ReadUByte( 0x1C2 + i*10h );
-        if( (BootIndicator == SYSTEM_PARTITION || BootIndicator == NOBOOT) && (SystemID != PARTITION_SYSTEMID_EMPTY) )
+        BootIndicator[i] = ReadUByte( 0x1BE + i*10h );
+        SystemID[i]      = ReadUByte( 0x1C2 + i*10h );
+        // only parse when:
+        // BOTH a valid boot indicator (0x00 or 0x80)
+        // AND  when the partition is not listed as an empty partition
+        if( (BootIndicator[i] == SYSTEM_PARTITION || BootIndicator[i] == NOBOOT) &&
+            (SystemID[i] != PARTITION_SYSTEMID_EMPTY) )
         {
+            // If the above holds true, then we presume this is an MBR-based media
+            // and thus initialize the MBR structure if not already having done so.
             if(mbr_boot_ok==0)
             {
+                FSeek(0);
                 MASTER_BOOT_RECORD boot_mbr <bgcolor=cLtPurple>;
                 mbr_boot_ok=1;
             }
 
-            // Jump to Partition
+            // Jump to Partition using boot_mbr structure definition of partition
             FSeek(boot_mbr.partitions[i].RelativeSector*(INT64)512);
+            
+            // If the drive already exists (e.g., MBR+GPT both listing partitions)
+            // then do not add the drive again
             if( !DriveAlreadyExists(FTell()) )
             {
-                if( !AutoDetectDrive( SystemID ) )
+                PreferredFS[i] = PreferredFileSystemTypeFromPartitionSystemID(SystemID[i]);
+                SystemID_AutoDetectDrive_Result[i] = AutoDetectDrive(SystemID[i]);
+                if(!SystemID_AutoDetectDrive_Result[i])
                 {
                     DRIVE_NOT_SUPPORTED drive;
                 }
