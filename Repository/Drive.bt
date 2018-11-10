@@ -474,6 +474,47 @@ typedef struct
 } EFI_PARTITION <open=true>;
 
 //################################################################
+// File system support section
+//################################################################
+
+typedef enum <uint32> {
+    FILE_SYSTEM_TYPE_NONE    = 0x0000,
+    FILE_SYSTEM_TYPE_IFS     = 0x0010,
+    FILE_SYSTEM_TYPE_NTFS    = 0x0020,
+    FILE_SYSTEM_TYPE_HPFS    = 0x0040,
+    FILE_SYSTEM_TYPE_FAT12   = 0x0100,
+    FILE_SYSTEM_TYPE_FAT16   = 0x0200,
+    FILE_SYSTEM_TYPE_FAT32   = 0x0400,
+    FILE_SYSTEM_TYPE_EXFAT   = 0x0800,
+} FILE_SYSTEM_TYPE <read=ReadFILE_SYSTEM_TYPE>;
+local const uint32 FILE_SYSTEM_TYPE_INVALID_MASK <hidden=true> = 0xFFFFF08F;
+local const uint32 FILE_SYSTEM_TYPE_VALID_MASK   <hidden=true> = 0x00000F70;
+local const uint32 FILE_SYSTEM_TYPE_ANY_FAT_MASK <hidden=true> = 0x00000700;
+local const uint32 MAX_UINT32 <hidden=true> = 0xFFFFFFFF;
+Assert((MAX_UINT32 ^ (FILE_SYSTEM_TYPE_INVALID_MASK ^ FILE_SYSTEM_TYPE_VALID_MASK)) == 0);
+Assert((MAX_UINT32 ^ (FILE_SYSTEM_TYPE_INVALID_MASK | FILE_SYSTEM_TYPE_VALID_MASK)) == 0);
+
+string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
+    if (type == FILE_SYSTEM_TYPE_NONE) { return "FILE_SYSTEM_TYPE_NONE"; }
+    local string result = "";
+    if (type & FILE_SYSTEM_TYPE_EXFAT ) { result += "| EXFAT"; }
+    if (type & FILE_SYSTEM_TYPE_FAT32 ) { result += "| FAT32"; }
+    if (type & FILE_SYSTEM_TYPE_FAT16 ) { result += "| FAT16"; }
+    if (type & FILE_SYSTEM_TYPE_FAT12 ) { result += "| FAT12"; }
+    if (type & FILE_SYSTEM_TYPE_HPFS  ) { result += "| HPFS"; }
+    if (type & FILE_SYSTEM_TYPE_NTFS  ) { result += "| NTFS"; }
+    if (type & FILE_SYSTEM_TYPE_IFS   ) { result += "| IFS"; }
+    local uint32 invalidFlags = ((uint32)type) & FILE_SYSTEM_TYPE_INVALID_MASK;
+    if (0 != invalidFlags) {
+        local string tmp;
+        SPrintf(tmp, "| 0x%x", type & invalidFlags);
+        result += tmp;
+    }
+    result = SubStr(result, 2);
+    return result;
+}
+
+//################################################################
 // FAT16 Drives
 //################################################################
 
