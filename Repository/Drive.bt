@@ -515,6 +515,306 @@ string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
 }
 
 //################################################################
+// IFS Drives
+//################################################################
+local const boolean IFS_VARIABLE_LENGTH_STRUCTURE <hidden=true> = false;
+
+typedef struct IFS_BOOTSECTOR { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
+    BYTE    jmp[3]          <format=hex>;
+    CHAR    OemName[8];
+    BYTE    MustBeZero[5]   <format=hex>;
+    DWORD   Identifier      <format=hex>; // must be 0x53525346 for Windows IFS
+    USHORT  Length          <format=hex>; // must be 0x18 (24?) ?? or allowed to be up to 64k?
+    USHORT  Checksum;
+    local UINT32 ExpectedChecksum =  Calculate_IFS_BOOTSECTOR_Checksum(this);
+
+    // Only add additional data when IFS structure is variable length AND
+    // checksum matches expected checksum AND there's actually additional data
+
+    if (IFS_VARIABLE_LENGTH_STRUCTURE && (Length > 24) && (ExpectedChecksum == Checksum)) {
+        BYTE AdditionalData[Length-24] <format=hex>;
+    }
+};
+// use a larger type to allow non-valid values (any value over 0xFFFF) to indicate errors
+UINT32 Calculate_IFS_BOOTSECTOR_Checksum( IFS_BOOTSECTOR& boot )
+{
+    local USHORT result = 0;
+    local USHORT i = 0;
+    local int64  start = startof(boot);
+    local int64  end = start + boot.Length;
+    
+    // If the IFS structure is not variable-lenght, then length MUST be 24 for a valid checksum
+    if (!IFS_VARIABLE_LENGTH_STRUCTURE) {
+        if (boot.Length != 24) {
+            return 0xBAAD0001;
+        }
+    }
+    // If the IFS structure goes beyond the end of file, then NO possible valid checksum
+    if (end > FileSize()) {
+        return 0xBAAD0002;
+    }
+
+    // Else calculate actual checksum
+    for (i = 3; i < boot.Length; i++) {
+        if (i == 22 || i == 23) { continue; } // skip the checksum itself
+        result = ((result & 1) ? 0x8000 : 0) + ((result >> 1) & 0x7FFF) + ReadByte(start+i);
+    }
+    return result;    
+}
+boolean IsValidIfsBootsector( IFS_BOOTSECTOR &boot) {
+    if (boot.MustBeZero[0] != 0) return false;
+    if (boot.MustBeZero[1] != 0) return false;
+    if (boot.MustBeZero[2] != 0) return false;
+    if (boot.MustBeZero[3] != 0) return false;
+    if (boot.MustBeZero[4] != 0) return false;
+    if (boot.Length != 24) return false;
+    if (boot.Identifier != 0x53525346) return false;
+    if (boot.Checksum != boot.ExpectedChecksum) return false;
+    return true;
+}
+
+//################################################################
+// exFAT Drives
+//################################################################
+typedef struct EXFAT_BOOTSECTOR {
+    BYTE    jmp[3]                        <format=hex>;
+    CHAR    OemName[8];
+    BYTE    MustBeZero[53]                <format=hex>; // covers the FAT12/16/32 BPB area
+    uint64  NumHiddenSectors              <format=hex>; // aka sectors prior to this volume; ignored here; if non-zero, can be used during boot-strapping via INT 13h
+    uint64  NumberOfSectors               <format=hex>; // min: 2^20 / BytesPerSectorShift  max: 0xFFF..FF
+    uint32  FirstFatSectorOffset          <format=hex>; // volume sector offset to first FAT table  min: 24  max: complex ... 
+    uint32  SectorsPerFat                 <format=hex>; // sector count for each copy of FAT    min:  (ClusterCount+2)*4 / SectorSize, ***ROUNDED UP***   max: (ClusterHeapOffset - FatOffset) / NumberOfFatTables
+    uint32  DataAreaSectorOffset          <format=hex>; // 
+    uint32  CountOfDataClusters           <format=hex>; // stored directly in the BPB, at last!
+    uint32  RootCluster                   <format=hex>; // first cluster, then follow FAT chain
+    uint32  VolumeSerialNumber            <format=hex>; // all values are valid
+    byte    FileSystemRevisionMinor       <format=hex>;
+    byte    FileSystemRevisionMajor       <format=hex>;
+    uint16  ActiveFatIndex   :  1;                      // zero-based index of the active FAT
+    uint16  IsVolumeDirty    :  1;                      // if non-zero, volume dismounted unexpectedly
+    uint16  MediaError       :  1;                      // a cluster not marked in as "bad" in FAT may be marginal or fail reads/writes
+    uint16  ReservedBits     : 13;
+    byte    BytesPerSectorShift           <format=hex>; // min: 9 (512 bytes), max: 12 (4096 bytes)
+    byte    SectorsPerClusterShift        <format=hex>; // min: 0 (1 sector/cluster), max: 25 - BytesPerSectorShift (32MB)
+    byte    NumberOfFatTables             <format=hex>; // min: 1, max: 2
+    byte    DriveNumber                   <format=hex>; // ignored here; can be used during boot-strapping via INT 13h
+    byte    PercentInUse                  <format=hex>; // min: 0, max: 100 -OR- exactly 0xFF
+    byte    Reserved[7]                   <format=hex>; 
+    BYTE    BootCode[390]                 <format=hex>;
+    uint16  EndOfSectorMarker             <format=hex>;
+
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
+
+    if (IsValidExfatBootSector(this)) {
+        // and some fields whose sole purpose is simplify (duck-typing) usage by common FAT12/16/32 and exFAT code
+        local  uint16 BytesPerSector    <format=hex> = 1 << BytesPerSectorShift;
+        local  byte   SectorsPerCluster <format=hex> = 1 << SectorsPerClusterShift;
+        local  uint16 MaxRootDirEntries              = 0;
+        local  uint32 MaximumValidClusterNumber      = CountOfDataClusters + 1;
+        FsType = FILE_SYSTEM_TYPE_EXFAT;
+    }
+};
+boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
+    // EXFAT specifies quite a bit...
+    if (boot.EndOfSectorMarker != 0xAA55) { return false; }
+    // validate those MustBeZero bytes actually are zero
+    local int i = 0;
+    for (i = 0; i < 53; i++) {
+        if (boot.MustBeZero[i] != 0) { return false; }
+    }
+    local uint32 minBytes = 1 << 20;
+    if (boot.FileSystemRevisionMajor != 1)                                 { return false; }
+    if ((boot.BytesPerSectorShift < 9) || (boot.BytesPerSectorShift > 12)) { return false; }
+    local uint32 bytesPerSector = 1 < boot.BytesPerSectorShift;
+    if ((minBytes / bytesPerSector) > boot.NumberOfSectors)                { return false; }
+
+    local int64 originalPosition = FTell();
+    
+    local int64 offsetToChecksums = (int64)bytesPerSector * 11;
+    local int64 checksumStart = startof(boot) + offsetToChecksums;
+    local uint32 firstChecksum = ReadUInt(checksumStart);
+    local uint32 currentChecksum;
+    for (i = 0; i < bytesPerSector; i+=4) {
+        currentChecksum = ReadUInt(checksumStart + i);
+        if (currentChecksum != firstChecksum) { return false; }
+    }
+    // this is mandatory... but I wonder if it's actually filled in as required?
+    Assert(boot.OemName == "EXFAT   ");
+    return true;
+}
+
+//################################################################
+// Combined FAT12/FAT16/FAT32 structures
+//################################################################
+typedef struct FAT_BOOTSECTOR {
+    BYTE    jmp[3]                <format=hex>;
+    CHAR    OemName[8];
+    USHORT  BytesPerSector        <format=hex>; // legal == { 512, 1024, 2048, 4096 }
+    UBYTE   SectorsPerCluster     <format=hex>; // legal == { 1, 2, 4, 8, 16, 32, 64, 128 }
+    USHORT  ReservedSectors       <format=hex>; // must not be zero; legal for FAT12/16 == { 1 }, typically 32 for FAT32
+    UBYTE   NumberOfFatTables     <format=hex>; // must not be zero; warn if this is not set to the value 1 or 2
+    USHORT  MaxRootDirEntries     <format=hex>; // legal for FAT12/16 == N * (BytesPerSector / 32), N is non-zero; must be {0} for FAT32
+    USHORT  NumberOfSectors16     <format=hex>; // must be {0} for FAT32; if {0}, then NumberOfSectors32 must be non-zero
+    MEDIA   MediaDescriptor       <format=hex>; // legacy
+    USHORT  SectorsPerFat16       <format=hex>; // must be {0} for FAT32; must be non-zero for FAT12/16
+    USHORT  SectorsPerTrack       <format=hex>; // legacy
+    USHORT  HeadsPerCylinder      <format=hex>; // legacy
+    ULONG   NumHiddenSectors      <format=hex>; // legacy
+    ULONG   NumberOfSectors32     <format=hex>; // must be non-zero for FAT32; must be >= 0x10000 if NumberOfSectors16 is zero
+
+    if (0 == this.SectorsPerFat16) { // FAT32 starting at sector offset 36
+        DWORD SectorsPerFat32    <format=hex>;
+        WORD  ActiveFatIndex : 4 <format=hex>; // zero-based index of the active FAT
+        WORD  FlagsReserved1 : 3 <format=hex>; 
+        WORD  TransactionFat : 1 <format=hex>; // 1 means only one FAT active, as indicated by ActiveFatIndex; 0 means both FATs are mirrored
+        WORD  FlagsReserved2 : 8 <format=hex>;
+        WORD  Version            <format=hex>; // must be 0
+        DWORD RootCluster        <format=hex>; // cluster number (FAT index) for root.  usually 2.  preferably first non-bad sector.
+        WORD  InfoSector         <format=hex>; // usually 1.
+        WORD  BootBackupStart    <format=hex>; // usually 6.  No other value than 6 is recommended
+        BYTE  Reserved[12]       <format=hex>; // set to zero by formatting utility, no indicaton of other uses but shall be ignored/preserved
+    }
+
+    BYTE   DriveNumber        <format=hex>;
+    BYTE   Unused             <format=hex>;
+    BYTE   ExtBootSignature   <format=hex>;
+    DWORD  SerialNumber       <format=hex>; // only valid if ExtBootSignature == 0x29
+    CHAR   VolumeLabel[11]    <format=hex>; // only valid if ExtBootSignature == 0x29
+    CHAR   FileSystemLabel[8] <format=hex>; // only valid if ExtBootSignature == 0x29
+
+    local INT64 tmp <hidden=true> = 510 - (FTell() - startof(this)); // 420 for FAT32, 448 for FAT16/12
+    UBYTE  BootCode[tmp]      <format=hex>;
+    WORD   EndOfSectorMarker  <format=hex>;
+
+    // Helpers to make FAT12/16/32 more common
+    local DWORD NumberOfSectors = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
+    local DWORD SectorsPerFat   = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
+    local DWORD CountOfDataClusters = ReadFAT_BOOTSECTOR_CountOfDataClusters(this);
+    local DWORD MaximumValidClusterNumber = CountOfDataClusters + 1; // +2, but zero-based indexing, so largest valid value is Count+1
+
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
+    if (CountOfDataClusters == 0) {
+        FsType = FILE_SYSTEM_TYPE_NONE; // oops
+    } else if (CountOfDataClusters < 4085) {
+        FsType = FILE_SYSTEM_TYPE_FAT12;
+    } else if (CountOfDataClusters < 65525) {
+        FsType = FILE_SYSTEM_TYPE_FAT16;
+    } else if (CountOfDataClusters < 0x0FFFFFF0 - 2) {
+        FsType = FILE_SYSTEM_TYPE_FAT32;
+    } else {
+        FsType = FILE_SYSTEM_TYPE_NONE; // oops
+    }    
+};
+
+DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
+{
+    if (boot.BytesPerSector == 0) return 0;
+
+    // First, the number of sectors in the special root directory area
+    local DWORD  rootDirectoryByteCount = boot.MaxRootDirEntries * 32;
+    local DWORD  rootDirectorySectors = rootDirectoryByteCount / boot.BytesPerSector;
+    if (rootDirectoryByteCount % boot.BytesPerSector != 0) {
+        rootDirectorySectors++;
+    }
+
+    // Next, the number of sectors in the data region
+    local DWORD sectorsPerFat = boot.SectorsPerFat;
+    local DWORD totalSectors = boot.NumberOfSectors;
+    local DWORD dataSectors = totalSectors;
+    dataSectors -= boot.ReservedSectors;
+    dataSectors -= boot.NumberOfFatTables * sectorsPerFat;
+    dataSectors -= rootDirectorySectors;
+
+    local DWORD countOfClusters = dataSectors / boot.SectorsPerCluster; // note that this rounds down
+    return countOfClusters;
+}
+boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
+    // FAT12/16/32 don't specify quite as much as mandatory...
+    if (boot.EndOfSectorMarker != 0xAA55) {
+        Printf("INVALID FAT (%08x): EndOfSectorMark not 0xAA55 (0x55 0xAA)\r\n", startof(boot));
+        return false;
+    }
+    if ((boot.FsType != FILE_SYSTEM_TYPE_FAT32) && 
+        (boot.FsType != FILE_SYSTEM_TYPE_FAT16) && 
+        (boot.FsType != FILE_SYSTEM_TYPE_FAT12) ) {
+        Printf("INVALID FAT (%08x): internal FsType not set to FAT32/16/12 (%s)\r\n", startof(boot), ReadFILE_SYSTEM_TYPE(boot.FsType));
+        return false;
+    }
+    if ((boot.BytesPerSector != 512) &&
+        (boot.BytesPerSector != 1024) &&
+        (boot.BytesPerSector != 2048) &&
+        (boot.BytesPerSector != 4096)) {
+        Printf("INVALID FAT (%08x): BytesPerSector (%x)\r\n", startof(boot), boot.BytesPerSector);
+        return false;
+    }
+    if ((boot.SectorsPerCluster  != 128) &&
+        (boot.SectorsPerCluster  !=  64) &&
+        (boot.SectorsPerCluster  !=  32) &&
+        (boot.SectorsPerCluster  !=  16) &&
+        (boot.SectorsPerCluster  !=   8) &&
+        (boot.SectorsPerCluster  !=   4) &&
+        (boot.SectorsPerCluster  !=   2) &&
+        (boot.SectorsPerCluster  !=   1)) {
+        Printf("INVALID FAT (%08x): SectorsPerCluster (%x)\r\n", startof(boot), boot.SectorsPerCluster);
+        return false;
+    }
+
+    if (boot.ReservedSectors     == 0) {
+        Printf("INVALID FAT (%08x): ReservedSectors is zero\r\n", startof(boot));
+        return false;
+    }
+    if ((boot.NumberOfFatTables  != 1) && (boot.NumberOfFatTables  != 2)) {
+        Printf("INVALID FAT (%08x): NumberOfFatTables invalid (%x)\r\n", startof(boot), boot.NumberOfFatTables);
+        return false;
+    }
+
+    if (boot.FsType == FILE_SYSTEM_TYPE_FAT32) {
+
+        if (boot.MaxRootDirEntries   != 0) {
+            Printf("INVALID FAT32 (%08x): MaxRootDirEntries must be zero (%x)\r\n", startof(boot), boot.MaxRootDirEntries);
+            return false;
+        }
+        if (boot.NumberOfSectors16   != 0) {
+            Printf("INVALID FAT32 (%08x): NumberOfSectors16 must be zero (%x)\r\n", startof(boot), boot.NumberOfSectors16);
+            return false;
+        }
+        if (boot.NumberOfSectors32   == 0) {
+            Printf("INVALID FAT32 (%08x): NumberOfSectors32 cannot be zero\r\n", startof(boot));
+            return false;
+        }
+        if (boot.SectorsPerFat16     != 0) {
+            Printf("INVALID FAT32 (%08x): SectorsPerFat16 must be zero (%x)\r\n", startof(boot), boot.SectorsPerFat16);
+            return false;
+        }
+        if (boot.SectorsPerFat32     == 0) {
+            Printf("INVALID FAT32 (%08x): SectorsPerFat32 cannot be zero\r\n", startof(boot));
+            return false;
+        }
+        if (boot.RootCluster         == 0) {
+            Printf("INVALID FAT32 (%08x): RootCluster cannot be zero\r\n", startof(boot));
+            return false;
+        }
+
+    } else if ((boot.FsType == FILE_SYSTEM_TYPE_FAT16) || (boot.FsType == FILE_SYSTEM_TYPE_FAT12)) {
+
+        if (boot.MaxRootDirEntries   == 0) {
+            Printf("INVALID FAT12/16 (%08x): MaxRootDirEntries cannot be zero\r\n", startof(boot));
+            return false;
+        }
+        if ((boot.NumberOfSectors16  == 0) && (boot.NumberOfSectors32  == 0)) {
+            Printf("INVALID FAT12/16 (%08x): NumberOfSectors16 and NumberOfSectors32 cannot both be zero\r\n", startof(boot));
+            return false;
+        }
+        if (boot.SectorsPerFat16     == 0) {
+            Printf("INVALID FAT12/16 (%08x): SectorsPerFat16 cannot be zero (%x)\r\n", startof(boot));
+            return false;
+        }
+    }
+    return true;
+}
+
+
+//################################################################
 // FAT16 Drives
 //################################################################
 
@@ -1562,53 +1862,64 @@ struct NTFS_FILE_RECORD;
 // NTFS Boot sector
 struct NTFS_BOOTSECTOR
 {
-    // bytes 0..2
     BYTE   jmp[3];         // Jump Instruction
-    // bytes 3..10
     CHAR   OEMName[8];     // OEM Identifier
-    // bytes 11..12
     WORD   BytesPerSector;
-    // byte  13
     BYTE   SectorsPerCluster;
-    // bytes 14..15
     WORD   ReservedSectors;
-    // bytes 16..18
     UBYTE  Zero[3];
-    // bytes 19..20
     WORD   NotUsed;
-    // byte  21
     MEDIA  MediaDescriptor <format=hex>;
-    // bytes 22..23
-    WORD   Zero;
-    // bytes 24..25
+    WORD   Zero2;
     WORD   SectorsPerTrack;
-    // bytes 26..27
     WORD   HeadsPerCylinder;
-    // bytes 28..31
     DWORD  HiddenSectors;
-    // bytes 32..35
     DWORD  NotUsed;
-    // bytes 36..39
     DWORD  NotUsed;
-    // bytes 40..47
     UQUAD  TotalSectors;
-    // bytes 48..55
     UQUAD  LogicalClusterMFT;
-    // bytes 56..63
     UQUAD  LogicalClusterMFTMirror;
-    // bytes 64..67
     DWORD  ClustersPerFileRecSegment;
-    // bytes 68..71
     DWORD  ClustersPerIndexBlock;
-    // bytes 72..79
     UQUAD  SerialNumber <format=hex>;
-    // bytes 80..83
     DWORD  Checksum;
-    // bytes 84..509
     BYTE   BootCode[426];
-    // bytes 510..511
     WORD   EndOfSectorMarker <format=hex>;
 };
+boolean IsValidNtfsBootSector(NTFS_BOOTSECTOR &boot) {
+
+    if (boot.EndOfSectorMarker != 0xAA55) { return false; }
+    
+    if ((boot.BytesPerSector != 512) &&
+        (boot.BytesPerSector != 1024) &&
+        (boot.BytesPerSector != 2048) &&
+        (boot.BytesPerSector != 4096)) {
+        return false;
+    }
+    if ((boot.SectorsPerCluster  != 128) &&
+        (boot.SectorsPerCluster  !=  64) &&
+        (boot.SectorsPerCluster  !=  32) &&
+        (boot.SectorsPerCluster  !=  16) &&
+        (boot.SectorsPerCluster  !=   8) &&
+        (boot.SectorsPerCluster  !=   4) &&
+        (boot.SectorsPerCluster  !=   2) &&
+        (boot.SectorsPerCluster  !=   1)) {
+        return false;
+    }
+    if (boot.Zero[0] != 0) { return false; }
+    if (boot.Zero[1] != 0) { return false; }
+    if (boot.Zero[2] != 0) { return false; }
+    if (boot.Zero2 != 0) { return false; }
+
+    if (boot.TotalSectors == 0) { return false; }
+    if (boot.LogicalClusterMFT == 0) { return false; }
+    if (boot.ClustersPerFileRecSegment == 0) { return false; }
+    if (boot.ClustersPerIndexBlock == 0) { return false; }
+    // TODO: Validate the Checksum?
+    return true;
+}
+
+
 
 typedef enum <ulong>
 {
@@ -2338,11 +2649,51 @@ typedef enum <SInt16> {
     kHFSFileThreadRecord    = 0x0004
 } HFS_RecordType;
 
+// https://developer.apple.com/library/archive/documentation/mac/Files/Files-101.html#HEADING101-0
+/*
+struct HFS_BOOTSECTOR
+{
+    // Bytes 00 .. 07
+    UInt16  Identifier; // always 0x4C4B (or 0x4B4C ... have to check endianness
+    UInt32  JmpCode;    // machine-language that translate to 'BRA.S *+$90' or 'BRA.S *+$88'
+    UInt16  Version;    // flags in high-order byte, plus version of the boot block structure
+    // Bytes 08 .. 09
+    UInt16  PageFlags;  // "used internally"
+    // Bytes 0A .. 39
+    char    SystemFilename[16]; 
+    char    FinderFilename[16]; // Usually "Finder"
+    char    DebuggerFilename1[16]; // Ususally "Macsbug"
+    // Bytes 4A .. 79
+    char    DebuggerFilename2[16]; // Ususally "Disassembler"
+    char    ScreenName[16]; // name of startup screen, usually "StartUpScreen"
+    char    HelloName[16];  // name of startup program, usually "Finder"
+    char    ScrapName[16];  // name of system scrap file, usually "Clipboard"
+    // Bytes 8A .. 8B
+    UInt16  FcbAllocationCount; // Initial count of file control blocks to allocate
+    // Bytes 8C .. 8D
+    UInt16  EventQueueElementCount; // Initial count of event queue elements to allocate, usually 20 (14h)
+    // Bytes 8E .. 91
+    UInt32  HeapSize128k; // The size of the system heap on a Macintosh computer having 128k of RAM
+    // Bytes 92 .. 95
+    UInt32  HeapSize256k; // "Reserved" (!)
+    // Bytes 96 .. 99
+    UInt32  SystemHeapSize; // The size of the system heap on a Macintosh computer having 512k or more of RAM
+    // Bytes 9A .. 9B
+    UInt16  Filler; // reserved
+    // Bytes 9C .. A0
+    UInt32  SystemHeapExtraSpace; // Valid when bit 5 of high-order byte of flags field is set.  Minimum additional amount of additional System heap space required.
+    // Bytes A0 .. A3
+    UInt32  SystemHeapFraction;   // Valid when bit 5 of high-order byte of flags field is set.  Fraction of RAM available to be used for the System heap, and added to SystemHeapSize.
+    // Bytes A4 .. 3FF  (164 .. 1023)
+    Byte    BootCode[860]; // pad to 1024 bytes with boot code
+};
+*/
+
 // HFS Volume information
 struct HFS_VolumeHeader 
 {
-    uchar               reserved[1024];
-    char                signature[2];
+    uchar               reserved[1024]; // TODO: replace with HFS_BOOTSECTOR
+    char                signature[2]; // 0x4244
     UInt16              version;
     UInt32              attributes;
     char                lastMountedVersion[4];
@@ -2369,6 +2720,16 @@ struct HFS_VolumeHeader
     HFS_ForkData        attributesFile;
     HFS_ForkData        startupFile;
 };
+boolean IsValidHfsBootSector(int64 pos) {
+    // For details on the HFS boot sector, see:
+    // https://developer.apple.com/library/archive/documentation/mac/Files/Files-101.html#HEADING101-0
+    if( (ReadString( pos + 1024, 2 ) != "H+") &&
+        (ReadString( pos + 1024, 2 ) != "HX") ) {
+        return false;
+    }
+    // TODO: Add additional HFS validation
+    return true;
+}
 
 // HFS Unicode string
 struct HFS_UniStr255 
