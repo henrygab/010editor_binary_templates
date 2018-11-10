@@ -228,6 +228,20 @@ typedef enum <uchar>
    PARTITION_SYSTEMID_BBT                            = 255,
 } PARTITION_SYSTEMID <format=hex>;
 
+// hack to allow printing this when using an integer instead of byte....
+string ReadPARTITION_SYSTEMID( int SystemIdAsInteger )
+{
+    local string result = "";
+    if (SystemIdAsInteger >= 0 && SystemIdAsInteger <= 0xFF) {
+        local PARTITION_SYSTEMID tmp = (PARTITION_SYSTEMID)SystemIdAsInteger;
+        result = EnumToString(tmp);
+    }
+    if (Strlen(result) == 0) {
+        SPrintf(result, "Invalid (0x%x)", SystemIdAsInteger);
+    }
+    return result;
+}
+
 // Media descriptor
 typedef enum <uchar>
 {
