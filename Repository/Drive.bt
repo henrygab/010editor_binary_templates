@@ -3374,10 +3374,6 @@ FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
         case PARTITION_SYSTEMID_SHAGOS_SWAP_MACOS_X_HFS:  // AFh
             preferredType |= FILE_SYSTEM_TYPE_HPFS;
             break;
-
-        default:
-            preferredType = FILE_SYSTEM_TYPE_NONE;
-            break;
     }
     return preferredType;
 }
