@@ -621,7 +621,10 @@ string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
 // NOTE: the first argument is the total size of BOTH tables, when two exist on the media
 typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
 {
-    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) return;
+    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) {
+        Assert((NumberOfCopiesOfFats==1) || (NumberOfCopiesOfFats==2));
+        return;
+    }
     local unsigned char ClusterEntrySize=2;
 
     // show the first two entries as media type and partition status
@@ -810,7 +813,10 @@ string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
 // FAT 32 Table
 typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad SectorSize)
 {
-    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) return;
+    if(NumberOfCopiesOfFats<1 || NumberOfCopiesOfFats>2) {
+        Assert((NumberOfCopiesOfFats==1) || (NumberOfCopiesOfFats==2));
+        return;
+    }
     local unsigned char ClusterEntrySize=4;
 
     // FAT32 supports variable sector size
@@ -853,6 +859,7 @@ typedef struct
 
     // FAT32 Boot sector
     FAT32_BOOTSECTOR boot_fat32 <bgcolor=cLtPurple>;
+    Assert(boot_fat32.bpb_fat32.BytesPerSector != 0);
     local quad  BytesPerSector = boot_fat32.bpb_fat32.BytesPerSector;
     local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
 
@@ -1502,7 +1509,7 @@ typedef struct
 
         // Jump to the next cluster
         Cluster = drive[DriveNum].table.Cluster[ Cluster ];
-        if( (Cluster == 0) || (Cluster >= MaxCluster) || (Cluster == FirstCluster) )
+        if( (Cluster == 0) || (Cluster >= MaxValidCluster) || (Cluster == FirstCluster) )
             break;
     }
 
