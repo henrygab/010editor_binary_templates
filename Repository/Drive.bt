@@ -668,7 +668,303 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
 
 // Forward definition;
 struct FAT_DIRECTORY;
+struct FAT_BOOTSECTOR; // boot sector supporting FAT12 + FAT16 + FAT32
 
+// Because of the different bit-widths, the enumerations and structs
+// related to the FAT must be separately defined for each FAT type.
+
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_MEDIA_HARD_DISK           = 0xff8,
+   FAT12_MEDIA_FLOPPY_DISK         = 0xff0
+} FAT12_MEDIA_TYPE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_PARTITION_NOT_IN_USE   = 0xfff,
+   FAT12_PARTITION_IN_USE       = 0xff7
+} FAT12_PARTITION_STATE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_CLUSTER_FREE_CLUSTER   = 0x000,
+   FAT12_CLUSTER_RESERVED_0001  = 0x001,
+   FAT12_CLUSTER_RESERVED_FFF0  = 0xFF0,
+   FAT12_CLUSTER_RESERVED_FFF1  = 0xFF1,
+   FAT12_CLUSTER_RESERVED_FFF2  = 0xFF2,
+   FAT12_CLUSTER_RESERVED_FFF3  = 0xFF3,
+   FAT12_CLUSTER_RESERVED_FFF4  = 0xFF4,
+   FAT12_CLUSTER_RESERVED_FFF5  = 0xFF5,
+   FAT12_CLUSTER_RESERVED_FFF6  = 0xFF6,
+   FAT12_CLUSTER_BAD_CLUSTER    = 0xFF7,
+   FAT12_CLUSTER_END_OF_CHAIN_FFF8 = 0xFF8,
+   FAT12_CLUSTER_END_OF_CHAIN_FFF9 = 0xFF9,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFA = 0xFFA,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFB = 0xFFB,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFC = 0xFFC,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFD = 0xFFD,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFE = 0xFFE,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFF = 0xFFF
+} FAT12_CLUSTER_INFO <read=ReadFAT12_CLUSTER_INFO>;
+
+string ReadFAT12_CLUSTER_INFO( FAT12_CLUSTER_INFO &info )
+{
+    if (info == FAT12_CLUSTER_FREE_CLUSTER) {
+        return "FREE_CLUSTER (000h)";
+    } else if (info == FAT12_CLUSTER_RESERVED_0001) {
+        return "RESERVED (001h)";
+    } else if (info >= 0xFF0 && info <= 0xFF6) {
+        local string s;
+        SPrintf(s, "RESERVED (%03xh)", info);
+        return s;
+    } else if (info == FAT12_CLUSTER_BAD_CLUSTER) {
+        return "BAD_CLUSTER (FF7h)";
+    } else if (info >= 0xFF8 && info <= 0xFFF) {
+        local string s;
+        SPrintf(s, "END_OF_CHAIN (%03xh)", info);
+        return s;
+    } else {
+        local string s;
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+        return s;
+    }
+}
+typedef enum <ushort>
+{
+   FAT16_MEDIA_HARD_DISK           = 0xfff8,
+   FAT16_MEDIA_FLOPPY_DISK         = 0xfff0
+} FAT16_MEDIA_TYPE <format=hex>;
+
+typedef enum <ushort>
+{
+   FAT16_PARTITION_NOT_IN_USE   = 0xffff,
+   FAT16_PARTITION_IN_USE       = 0xfff7
+} FAT16_PARTITION_STATE <format=hex>;
+
+typedef enum <ushort>
+{
+   FAT16_CLUSTER_FREE_CLUSTER   = 0x0000,
+   FAT16_CLUSTER_RESERVED_0001  = 0x0001,
+   FAT16_CLUSTER_RESERVED_FFF0  = 0xFFF0,
+   FAT16_CLUSTER_RESERVED_FFF1  = 0xFFF1,
+   FAT16_CLUSTER_RESERVED_FFF2  = 0xFFF2,
+   FAT16_CLUSTER_RESERVED_FFF3  = 0xFFF3,
+   FAT16_CLUSTER_RESERVED_FFF4  = 0xFFF4,
+   FAT16_CLUSTER_RESERVED_FFF5  = 0xFFF5,
+   FAT16_CLUSTER_RESERVED_FFF6  = 0xFFF6,
+   FAT16_CLUSTER_BAD_CLUSTER    = 0xFFF7,
+   FAT16_CLUSTER_END_OF_CHAIN_FFF8 = 0xFFF8,
+   FAT16_CLUSTER_END_OF_CHAIN_FFF9 = 0xFFF9,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFA = 0xFFFA,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFB = 0xFFFB,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFC = 0xFFFC,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFD = 0xFFFD,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFE = 0xFFFE,
+   FAT16_CLUSTER_END_OF_CHAIN_FFFF = 0xFFFF
+} FAT16_CLUSTER_INFO <read=ReadFAT16_CLUSTER_INFO>;
+
+string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
+{
+    if (info == FAT16_CLUSTER_FREE_CLUSTER) {
+        return "FREE_CLUSTER (0000h)";
+    } else if (info == FAT16_CLUSTER_RESERVED_0001) {
+        return "RESERVED (0001h)";
+    } else if (info >= 0xFFF0 && info <= 0xFFF6) {
+        local string s;
+        SPrintf(s, "RESERVED (%04xh)", info);
+        return s;
+    } else if (info == FAT16_CLUSTER_BAD_CLUSTER) {
+        return "BAD_CLUSTER (FFF7h)";
+    } else if (info >= 0xFFF8 && info <= 0xFFFF) {
+        local string s;
+        SPrintf(s, "END_OF_CHAIN (%04xh)", info);
+        return s;
+    } else {
+        local string s;
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+        return s;
+    }
+}
+
+// FAT32 FAT Table
+// BUGBUG -- FAT32 entries use only 28 bits -- convert to bitfield
+// 4 high bit (MSB) are reserved for future use.
+// The following FAT32 enum could be wrong if 4 high bit reserved are different from 0x0 or 0xf
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 28').
+typedef enum <ulong>
+{
+   FAT32_MEDIA_HARD_DISK           = 0x0ffffff8,
+   FAT32_MEDIA_FLOPPY_DISK         = 0x0ffffff0
+} FAT32_MEDIA_TYPE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 28').
+typedef enum <ulong>
+{
+   FAT32_PARTITION_NOT_IN_USE   = 0xffffffff,
+   FAT32_PARTITION_IN_USE       = 0xfffffff7
+} FAT32_PARTITION_STATE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 28').
+typedef enum <ulong>
+{
+   FAT32_CLUSTER_FREE = 0x00000000,
+   FAT32_CLUSTER_RESERVED_0001  = 0x00000001,
+   FAT32_CLUSTER_RESERVED_FFF0  = 0x0FFFFFF0,
+   FAT32_CLUSTER_RESERVED_FFF1  = 0x0FFFFFF1,
+   FAT32_CLUSTER_RESERVED_FFF2  = 0x0FFFFFF2,
+   FAT32_CLUSTER_RESERVED_FFF3  = 0x0FFFFFF3,
+   FAT32_CLUSTER_RESERVED_FFF4  = 0x0FFFFFF4,
+   FAT32_CLUSTER_RESERVED_FFF5  = 0x0FFFFFF5,
+   FAT32_CLUSTER_RESERVED_FFF6  = 0x0FFFFFF6,
+   FAT32_CLUSTER_BAD_CLUSTER    = 0x0FFFFFF7,
+   FAT32_CLUSTER_END_OF_CHAIN_FFF8 = 0x0FFFFFF8,
+   FAT32_CLUSTER_END_OF_CHAIN_FFF9 = 0x0FFFFFF9,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFA = 0x0FFFFFFA,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFB = 0x0FFFFFFB,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFC = 0x0FFFFFFC,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFD = 0x0FFFFFFD,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFE = 0x0FFFFFFE,
+   FAT32_CLUSTER_END_OF_CHAIN_FFFF = 0x0FFFFFFF
+} FAT32_CLUSTER_INFO <read=ReadFAT32_CLUSTER_INFO>;
+
+string ReadFAT32_CLUSTER_INFO( FAT32_CLUSTER_INFO &info )
+{
+    // Top four bits are reserved
+    ulong tmp = info & 0x0FFFFFFF;
+    ulong reserved_bits = info & 0xF0000000;
+    string s = "";
+
+    if (tmp == FAT32_CLUSTER_FREE) {
+        s += "FREE_CLUSTER (00000000h)";
+    } else if (tmp == 0x00000001) {
+        s += "RESERVED (00000001h)";
+    } else if (tmp >= 0x0FFFFFF0 && tmp <= 0x0FFFFFF6) {
+        SPrintf(s, "RESERVED (%08xh)", tmp);
+    } else if (tmp == FAT32_CLUSTER_BAD_CLUSTER) {
+        s += "BAD_CLUSTER (0FFFFFF7h)";
+    } else if (tmp >= 0x0FFFFFF8 && tmp <= 0x0FFFFFFF) {
+        SPrintf(s, "END_OF_CHAIN (%08xh)", info);
+    } else {
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+    }
+    return s;
+}
+
+typedef struct (DWORD CountOfDataClusters)
+{
+    Assert(CountOfDataClusters <= 4085);
+
+    local quad startFilePosition <hidden=true> = FTell();
+    local DWORD count_of_data_clusters = CountOfDataClusters;
+    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
+    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
+    // which will allow safely restoring the prior bitfield padding state.
+    // However, that functionality does not yet exist as of v9.0c.
+    BitfieldDisablePadding();
+
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 12').
+    FAT12_MEDIA_TYPE      MediaType      : 12;
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 12').
+    FAT12_PARTITION_STATE PartitionState : 12;
+    
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // A loop such as below has the best chance of a future version
+    // collapsing the displayed array.
+    FSeek( startFilePosition );
+    local DWORD i <hidden=true> = CountOfDataClusters+2;
+    while (i > 0) {
+        // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+        // Therefore, every usage will require the bitfield annotation (' : 12').
+        FAT12_CLUSTER_INFO Cluster : 12;
+        i -= 1;
+    }
+
+    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
+    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
+    // which will allow safely restoring the prior bitfield padding state.
+    // However, that functionality does not yet exist as of v9.0c.
+    BitfieldEnablePadding();
+
+} FAT12_FAT_TABLE <read=ReadFAT12_FAT_TABLE>;
+
+string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE &fat_table )
+{
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // The entire purpose of this routine is to make the UI as similar
+    // as possible to an array.
+    local string s;
+    SPrintf(s, "enum FAT12_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
+    return s;
+}
+
+typedef struct (quad CountOfDataClusters)
+{
+    local quad start = FTell();
+    // show the first two entries as media type and partition status
+    // FAT16 only supports 512 byte sectors(?)
+    FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
+    FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
+
+    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
+    FSeek( start );
+    FAT16_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
+} FAT16_FAT_TABLE;
+
+typedef struct (DWORD CountOfDataClusters)
+{
+    local quad start = FTell();
+    local DWORD count_of_data_clusters = CountOfDataClusters;
+
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 28').
+    FAT32_MEDIA_TYPE      MediaType      : 28;
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 28').
+    FAT32_PARTITION_STATE PartitionState : 28;
+
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // A loop such as below has the best chance of a future version
+    // collapsing the displayed array.
+    FSeek( start );
+    local DWORD i <hidden=true> = CountOfDataClusters+2;
+    while (i > 0) {
+        // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+        // Therefore, every usage will require the bitfield annotation (' : 28').
+        FAT32_CLUSTER_INFO Cluster : 28;
+        i -= 1;
+    }
+} FAT32_FAT_TABLE <read=ReadFAT32_FAT_TABLE>;
+
+string ReadFAT32_FAT_TABLE( FAT32_FAT_TABLE &fat_table )
+{
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // The entire purpose of this routine is to make the UI as similar
+    // as possible to an array.
+    local string s;
+    SPrintf(s, "enum FAT32_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
+    return s;
+}
 
 typedef struct  {
     BYTE    jmp[3]                <format=hex>;
@@ -895,278 +1191,7 @@ boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
     return true;
 }
 
-// FAT12 FAT Table
 
-// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-// Therefore, every usage will require the bitfield annotation (' : 12').
-typedef enum <ushort>
-{
-   FAT12_MEDIA_HARD_DISK           = 0xff8,
-   FAT12_MEDIA_FLOPPY_DISK         = 0xff0
-} FAT12_MEDIA_TYPE <format=hex>;
-
-// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-// Therefore, every usage will require the bitfield annotation (' : 12').
-typedef enum <ushort>
-{
-   FAT12_PARTITION_NOT_IN_USE   = 0xfff,
-   FAT12_PARTITION_IN_USE       = 0xff7
-} FAT12_PARTITION_STATE <format=hex>;
-
-// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-// Therefore, every usage will require the bitfield annotation (' : 12').
-typedef enum <ushort>
-{
-   FAT12_CLUSTER_FREE_CLUSTER   = 0x000,
-   FAT12_CLUSTER_RESERVED_0001  = 0x001,
-   FAT12_CLUSTER_RESERVED_FFF0  = 0xFF0,
-   FAT12_CLUSTER_RESERVED_FFF1  = 0xFF1,
-   FAT12_CLUSTER_RESERVED_FFF2  = 0xFF2,
-   FAT12_CLUSTER_RESERVED_FFF3  = 0xFF3,
-   FAT12_CLUSTER_RESERVED_FFF4  = 0xFF4,
-   FAT12_CLUSTER_RESERVED_FFF5  = 0xFF5,
-   FAT12_CLUSTER_RESERVED_FFF6  = 0xFF6,
-   FAT12_CLUSTER_BAD_CLUSTER    = 0xFF7,
-   FAT12_CLUSTER_END_OF_CHAIN_FFF8 = 0xFF8,
-   FAT12_CLUSTER_END_OF_CHAIN_FFF9 = 0xFF9,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFA = 0xFFA,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFB = 0xFFB,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFC = 0xFFC,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFD = 0xFFD,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFE = 0xFFE,
-   FAT12_CLUSTER_END_OF_CHAIN_FFFF = 0xFFF
-} FAT12_CLUSTER_INFO <read=ReadFAT12_CLUSTER_INFO>;
-
-string ReadFAT12_CLUSTER_INFO( FAT12_CLUSTER_INFO &info )
-{
-    if (info == FAT12_CLUSTER_FREE_CLUSTER) {
-        return "FREE_CLUSTER (000h)";
-    } else if (info == FAT12_CLUSTER_RESERVED_0001) {
-        return "RESERVED (001h)";
-    } else if (info >= 0xFF0 && info <= 0xFF6) {
-        local string s;
-        SPrintf(s, "RESERVED (%03xh)", info);
-        return s;
-    } else if (info == FAT12_CLUSTER_BAD_CLUSTER) {
-        return "BAD_CLUSTER (FF7h)";
-    } else if (info >= 0xFF8 && info <= 0xFFF) {
-        local string s;
-        SPrintf(s, "END_OF_CHAIN (%03xh)", info);
-        return s;
-    } else {
-        local string s;
-        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-        return s;
-    }
-}
-
-// FAT 12 Table
-// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
-typedef struct (DWORD CountOfDataClusters)
-{
-    Assert(CountOfDataClusters <= 4085);
-
-    local quad startFilePosition <hidden=true> = FTell();
-    local DWORD count_of_data_clusters = CountOfDataClusters;
-    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
-    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
-    // which will allow safely restoring the prior bitfield padding state.
-    // However, that functionality does not yet exist as of v9.0c.
-    BitfieldDisablePadding();
-
-    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-    // Therefore, every usage will require the bitfield annotation (' : 12').
-    FAT12_MEDIA_TYPE      MediaType      : 12;
-    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-    // Therefore, every usage will require the bitfield annotation (' : 12').
-    FAT12_PARTITION_STATE PartitionState : 12;
-    
-    // HACKHACK - Per Sweetscape support, there is also no way to create
-    // an array of bitfields that is shown collapsed (like "real" arrays),
-    // at least as of v9.0c.
-    // A loop such as below has the best chance of a future version
-    // collapsing the displayed array.
-    FSeek( startFilePosition );
-    local DWORD i <hidden=true> = CountOfDataClusters+2;
-    while (i > 0) {
-        // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
-        // Therefore, every usage will require the bitfield annotation (' : 12').
-        FAT12_CLUSTER_INFO Cluster : 12;
-        i -= 1;
-    }
-
-    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
-    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
-    // which will allow safely restoring the prior bitfield padding state.
-    // However, that functionality does not yet exist as of v9.0c.
-    BitfieldEnablePadding();
-
-} FAT12_FAT_TABLE_x <read=ReadFAT12_FAT_TABLE>;
-
-string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE_x &fat_table )
-{
-    // HACKHACK - Per Sweetscape support, there is also no way to create
-    // an array of bitfields that is shown collapsed (like "real" arrays),
-    // at least as of v9.0c.
-    // The entire purpose of this routine is to make the UI as similar
-    // as possible to an array.
-    local string s;
-    SPrintf(s, "enum FAT12_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
-    return s;
-}
-
-//################################################################
-// FAT16 Drives
-//################################################################
-
-// FAT16 FAT Table
-typedef enum <ushort>
-{
-   FAT16_MEDIA_HARD_DISK           = 0xfff8,
-   FAT16_MEDIA_FLOPPY_DISK         = 0xfff0
-} FAT16_MEDIA_TYPE <format=hex>;
-
-typedef enum <ushort>
-{
-   FAT16_PARTITION_NOT_IN_USE   = 0xffff,
-   FAT16_PARTITION_IN_USE       = 0xfff7
-} FAT16_PARTITION_STATE <format=hex>;
-
-typedef enum <ushort>
-{
-   FAT16_CLUSTER_FREE_CLUSTER   = 0x0000,
-   FAT16_CLUSTER_RESERVED_0001  = 0x0001,
-   FAT16_CLUSTER_RESERVED_FFF0  = 0xFFF0,
-   FAT16_CLUSTER_RESERVED_FFF1  = 0xFFF1,
-   FAT16_CLUSTER_RESERVED_FFF2  = 0xFFF2,
-   FAT16_CLUSTER_RESERVED_FFF3  = 0xFFF3,
-   FAT16_CLUSTER_RESERVED_FFF4  = 0xFFF4,
-   FAT16_CLUSTER_RESERVED_FFF5  = 0xFFF5,
-   FAT16_CLUSTER_RESERVED_FFF6  = 0xFFF6,
-   FAT16_CLUSTER_BAD_CLUSTER    = 0xFFF7,
-   FAT16_CLUSTER_END_OF_CHAIN_FFF8 = 0xFFF8,
-   FAT16_CLUSTER_END_OF_CHAIN_FFF9 = 0xFFF9,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFA = 0xFFFA,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFB = 0xFFFB,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFC = 0xFFFC,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFD = 0xFFFD,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFE = 0xFFFE,
-   FAT16_CLUSTER_END_OF_CHAIN_FFFF = 0xFFFF
-} FAT16_CLUSTER_INFO <read=ReadFAT16_CLUSTER_INFO>;
-
-string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
-{
-    if (info == FAT16_CLUSTER_FREE_CLUSTER) {
-        return "FREE_CLUSTER (0000h)";
-    } else if (info == FAT16_CLUSTER_RESERVED_0001) {
-        return "RESERVED (0001h)";
-    } else if (info >= 0xFFF0 && info <= 0xFFF6) {
-        local string s;
-        SPrintf(s, "RESERVED (%04xh)", info);
-        return s;
-    } else if (info == FAT16_CLUSTER_BAD_CLUSTER) {
-        return "BAD_CLUSTER (FFF7h)";
-    } else if (info >= 0xFFF8 && info <= 0xFFFF) {
-        local string s;
-        SPrintf(s, "END_OF_CHAIN (%04xh)", info);
-        return s;
-    } else {
-        local string s;
-        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-        return s;
-    }
-}
-
-// FAT 16 Table
-// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
-typedef struct (quad CountOfDataClusters)
-{
-    local quad start = FTell();
-    // show the first two entries as media type and partition status
-    // FAT16 only supports 512 byte sectors(?)
-    FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
-    FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
-
-    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
-    FSeek( start );
-    FAT16_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
-} FAT16_FAT_TABLE_x;
-
-//################################################################
-// FAT32 Drives
-//################################################################
-
-// FAT32 FAT Table
-// Warning on FAT32 only 28bit contain value
-// 4 high bit (MSB) are reserved for future use.
-// It is why following FAT32 enum could be wrong if 4 high bit reserved are different from 0x0 or 0xf
-
-typedef enum <ulong>
-{
-   FAT32_MEDIA_HARD_DISK           = 0x0ffffff8,
-   FAT32_MEDIA_FLOPPY_DISK         = 0x0ffffff0
-} FAT32_MEDIA_TYPE <format=hex>;
-
-typedef enum <ulong>
-{
-   FAT32_PARTITION_NOT_IN_USE   = 0xffffffff,
-   FAT32_PARTITION_IN_USE       = 0xfffffff7
-} FAT32_PARTITION_STATE <format=hex>;
-
-typedef enum <ulong>
-{
-   FAT32_CLUSTER_FREE = 0x00000000,
-   FAT32_CLUSTER_RESERVED_0001  = 0x00000001,
-   FAT32_CLUSTER_RESERVED_FFF0  = 0x0FFFFFF0,
-   FAT32_CLUSTER_RESERVED_FFF1  = 0x0FFFFFF1,
-   FAT32_CLUSTER_RESERVED_FFF2  = 0x0FFFFFF2,
-   FAT32_CLUSTER_RESERVED_FFF3  = 0x0FFFFFF3,
-   FAT32_CLUSTER_RESERVED_FFF4  = 0x0FFFFFF4,
-   FAT32_CLUSTER_RESERVED_FFF5  = 0x0FFFFFF5,
-   FAT32_CLUSTER_RESERVED_FFF6  = 0x0FFFFFF6,
-   FAT32_CLUSTER_BAD_CLUSTER    = 0x0FFFFFF7,
-   FAT32_CLUSTER_END_OF_CHAIN_FFF8 = 0x0FFFFFF8,
-   FAT32_CLUSTER_END_OF_CHAIN_FFF9 = 0x0FFFFFF9,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFA = 0x0FFFFFFA,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFB = 0x0FFFFFFB,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFC = 0x0FFFFFFC,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFD = 0x0FFFFFFD,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFE = 0x0FFFFFFE,
-   FAT32_CLUSTER_END_OF_CHAIN_FFFF = 0x0FFFFFFF
-} FAT32_CLUSTERINFO <read=ReadFAT32_CLUSTERINFO>;
-
-string ReadFAT32_CLUSTERINFO( FAT32_CLUSTERINFO &info )
-{
-    // Top four bits are reserved
-    ulong tmp = info & 0x0FFFFFFF;
-    ulong reserved_bits = info & 0xF0000000;
-    string s = "";
-
-    if (tmp == FAT32_CLUSTER_FREE) {
-        s += "FREE_CLUSTER (00000000h)";
-    } else if (tmp == 0x00000001) {
-        s += "RESERVED (00000001h)";
-    } else if (tmp >= 0x0FFFFFF0 && tmp <= 0x0FFFFFF6) {
-        SPrintf(s, "RESERVED (%08xh)", tmp);
-    } else if (tmp == FAT32_CLUSTER_BAD_CLUSTER) {
-        s += "BAD_CLUSTER (0FFFFFF7h)";
-    } else if (tmp >= 0x0FFFFFF8 && tmp <= 0x0FFFFFFF) {
-        SPrintf(s, "END_OF_CHAIN (%08xh)", info);
-    } else {
-        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-    }
-    return s;
-}
-
-// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
-typedef struct (DWORD CountOfDataClusters)
-{
-    local quad start = FTell();
-    FAT32_MEDIA_TYPE      MediaType;
-    FAT32_PARTITION_STATE PartitionState;
-    FSeek( start );
-    FAT32_CLUSTERINFO    Cluster[ CountOfDataClusters + 2 ];
-} FAT32_FAT_TABLE_x;
 
 // Define a FAT 12/16/32 combined drive type
 typedef struct
@@ -1218,11 +1243,11 @@ typedef struct
         pos += (boot_sector.SectorsPerFat * boot_sector.BytesPerSector * i);
         FSeek(pos);
         if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT32) {
-            FAT32_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+            FAT32_FAT_TABLE table(boot_sector.CountOfDataClusters);
         } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT16) {
-            FAT16_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+            FAT16_FAT_TABLE table(boot_sector.CountOfDataClusters);
         } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT12) {
-            FAT12_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+            FAT12_FAT_TABLE table(boot_sector.CountOfDataClusters);
         }
     }
     
