@@ -593,7 +593,7 @@ typedef struct EXFAT_BOOTSECTOR {
     byte    FileSystemRevisionMajor       <format=hex>;
     uint16  ActiveFatIndex   :  1;                      // zero-based index of the active FAT
     uint16  IsVolumeDirty    :  1;                      // if non-zero, volume dismounted unexpectedly
-    uint16  MediaError       :  1;                      // a cluster not marked in as "bad" in FAT may be marginal or fail reads/writes
+    uint16  MediaError       :  1;                      // a cluster not marked as "bad" in FAT may be marginal or fail reads/writes
     uint16  ReservedBits     : 13;
     byte    BytesPerSectorShift           <format=hex>; // min: 9 (512 bytes), max: 12 (4096 bytes)
     byte    SectorsPerClusterShift        <format=hex>; // min: 0 (1 sector/cluster), max: 25 - BytesPerSectorShift (32MB)
@@ -612,7 +612,7 @@ typedef struct EXFAT_BOOTSECTOR {
         local  byte   SectorsPerCluster <format=hex> = 1 << SectorsPerClusterShift;
         local  uint16 MaxRootDirEntries              = 0;
         local  uint32 MaximumValidClusterNumber      = CountOfDataClusters + 1;
-        FsType = FILE_SYSTEM_TYPE_EXFAT;
+        FsType = FILE_SYSTEM_TYPE_EXFAT; // only set this after checked validity
     }
 };
 boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
@@ -623,21 +623,39 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     for (i = 0; i < 53; i++) {
         if (boot.MustBeZero[i] != 0) { return false; }
     }
-    local uint32 minBytes = 1 << 20;
-    if (boot.FileSystemRevisionMajor != 1)                                 { return false; }
-    if ((boot.BytesPerSectorShift < 9) || (boot.BytesPerSectorShift > 12)) { return false; }
+    local uint32 minBytes = 1 << 20; // Minimum number of bytes in exFAT volume?
+    if (boot.FileSystemRevisionMajor != 1) {
+        Prinf("INVALID exFAT (%08x): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
+        return false;
+    }
+    if ((boot.BytesPerSectorShift < 9) || (boot.BytesPerSectorShift > 12)) {
+        Prinf("INVALID exFAT (%08x): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
+        return false;
+    }
     local uint32 bytesPerSector = 1 < boot.BytesPerSectorShift;
-    if ((minBytes / bytesPerSector) > boot.NumberOfSectors)                { return false; }
+    local uint32 minimumSectors = minBytes >> boot.BytesPerSectorShift;
+    if (minimumSectors > boot.NumberOfSectors) {
+        Prinf("INVALID exFAT (%08x): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
+        return false;
+    }
 
-    local int64 originalPosition = FTell();
-    
+    // Validate the checksum is repeated in sector[11]
+    // This works even when using the backup copy of the boot sector,
+    // as all math is relative to the startof(boot).
+    //
+    // Get the first 32-bit value from the sector
     local int64 offsetToChecksums = (int64)bytesPerSector * 11;
     local int64 checksumStart = startof(boot) + offsetToChecksums;
     local uint32 firstChecksum = ReadUInt(checksumStart);
+
+    // verify it is repeated throughout the entire sector
     local uint32 currentChecksum;
     for (i = 0; i < bytesPerSector; i+=4) {
         currentChecksum = ReadUInt(checksumStart + i);
-        if (currentChecksum != firstChecksum) { return false; }
+        if (currentChecksum != firstChecksum) {
+            Prinf("INVALID exFAT (%08x): Checksum not repeated for entire sector[11] ... (non-equal at offset 0x%x, value 0x%08x != 0x%08x)\r\n", startof(boot), i, currentChecksum, firstChecksum);
+            return false;
+        }
     }
     // this is mandatory... but I wonder if it's actually filled in as required?
     Assert(boot.OemName == "EXFAT   ");
@@ -647,7 +665,7 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
 //################################################################
 // Combined FAT12/FAT16/FAT32 structures
 //################################################################
-typedef struct FAT_BOOTSECTOR {
+typedef struct  {
     BYTE    jmp[3]                <format=hex>;
     CHAR    OemName[8];
     USHORT  BytesPerSector        <format=hex>; // legal == { 512, 1024, 2048, 4096 }
@@ -707,7 +725,13 @@ typedef struct FAT_BOOTSECTOR {
     } else {
         FsType = FILE_SYSTEM_TYPE_NONE; // oops
     }
-};
+} FAT_BOOTSECTOR <read=ReadFAT_BOOTSECTOR>;
+
+string ReadFAT_BOOTSECTOR( FAT_BOOTSECTOR &boot )
+{
+    return boot.VolumeLabel;
+}
+
 DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
 {
     // First determine the number of bytes required.
