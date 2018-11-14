@@ -36,6 +36,9 @@
 LittleEndian(); 
 local int NumDrives = 0;
 
+local const DWORD DefaultSectorSize = 512;
+local DWORD DetectedSectorSize = 0; // set to either 512 or 4096, as needed
+
 typedef enum <int> {
     boolean_false = 0,
     boolean_true = 1,
@@ -793,11 +796,6 @@ string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
     }
 }
 
-// FAT32 FAT Table
-// BUGBUG -- FAT32 entries use only 28 bits -- convert to bitfield
-// 4 high bit (MSB) are reserved for future use.
-// The following FAT32 enum could be wrong if 4 high bit reserved are different from 0x0 or 0xf
-
 // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
 // Therefore, every usage will require the bitfield annotation (' : 28').
 typedef enum <ulong>
@@ -1262,9 +1260,8 @@ typedef struct
 //################################################################
 
 // FAT Directory Attribute
-// BUGBUG -- would prefer to define this as a bitfield, to avoid
-//           forcing all callers to mask the value (which is bug-prone)
-//           unfortunately, this is not an available feature (as of v9.0)
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 6').
 typedef enum <uchar>
 {
     FAT_ATTR_LongFileNameEntry        = 0x0F, // special case
@@ -1297,10 +1294,10 @@ typedef enum <uchar>
     FAT_ATTR_Hidden_System_Directory_Archive          = 0x36,
     FAT_ATTR_ReadOnly_Hidden_System_Directory_Archive = 0x37,
 } FAT_ATTR_TYPE <read=ReadFAT_ATTR_TYPE>;
+
+// NOTE: used in routine that reads-ahead to detects if the entry if LFN or not
 local const uchar FAT_ATTR_TYPE_RESERVED_MASK <hidden=true> = 0xC0;
 local const uchar FAT_ATTR_TYPE_VALID_MASK <hidden=true> = 0x3F;
-
-
 
 string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
 {
@@ -1371,7 +1368,7 @@ typedef struct // Normal-Short structure
 {
     CHAR    Name[8]; // Blank-padded name
     CHAR    Extension[3]; //Blank-padded extension
-    FAT_ATTR_TYPE Attribute;
+    FAT_ATTR_TYPE Attribute : 6; // only low six bits are valid
     UBYTE   Reserved        <format=hex>;
     UBYTE   CreateTime10ms; //10-ms units "Create Time" refinement
     DOSTIME CreateTime;
@@ -1401,9 +1398,9 @@ string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
     
     // Add period only if extension exists, unless it's a FAT_ATTR_LongFileNameEntry or FAT_ATTR_VolumeID
     local int addPeriod = extensionLength > 0;
-    if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK == FAT_ATTR_LongFileNameEntry) {
+    if (f.Attribute == FAT_ATTR_LongFileNameEntry) {
         addPeriod = false;
-    } else if (f.Attribute & FAT_ATTR_TYPE_VALID_MASK & FAT_ATTR_VolumeId) {
+    } else if (f.Attribute & FAT_ATTR_VolumeId) {
         addPeriod = false;
     }
     local string result = name;
@@ -1457,7 +1454,7 @@ typedef struct
     } ULFN;
     ULFN    LFN;
     wchar_t UnicodeChar1[5];      // 5 UNICODE characters, LFN first part.
-    FAT_ATTR_TYPE    Attribute;   // This field contains the special value of 0Fh, which indicates an LFN entry.
+    FAT_ATTR_TYPE Attribute : 6;  // This field contains the special value of 0Fh, which indicates an LFN entry.
     UBYTE   Reserved         <format=hex>;
     UBYTE   ChkShortName     <format=hex>; // Checksum of short name entry, used to validate that the LFN entry belongs to the short name entry following. According to Ralf Brown's interrupt list, the checksum is computed by adding up all the short name characters and rotating the intermediate value right by one bit position before adding each character.
     wchar_t UnicodeChar2[6];      // 6 UNICODE characters, LFN 2nd part.
@@ -1900,7 +1897,7 @@ typedef struct
 //  be contiguous on disk, and this is the smallest supported sector size.
 int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 {
-    return 512;
+    return DefaultSectorSize;
 }
 
 // FAT Directory Entry List
@@ -1929,7 +1926,7 @@ typedef struct
 //  be contiguous on disk, and 512 is the smallest supported sector size.
 int SizeFAT_DIRECTORY( FAT_DIRECTORY &dir )
 {
-    return 512;
+    return DefaultSectorSize;
 }
 
 //################################################################
@@ -3072,9 +3069,11 @@ typedef struct
 
     // NOTE: In the future we could read from the extents overflow file for
     //  data files that have more than 8 extents
-    FSeek( pos+512 );
+
+    // BUGBUG-4kn -- magic required here to support 4k sectors on HFS
+    FSeek( pos + DefaultSectorSize );
     LittleEndian();
-} HFS_FileData <size=512>; //use on-demand - size unknown
+} HFS_FileData <size=DefaultSectorSize>; //use on-demand - size unknown
 
 // HFS - File stored in the catalog
 typedef struct
@@ -3286,6 +3285,7 @@ typedef union
     struct MASTER_BOOT_RECORD mbr;
     struct FAT_BOOTSECTOR boot_fat;
     struct NTFS_BOOTSECTOR boot_ntfs;
+    strict IFS_BOOTSECTOR boot_ifs;
 } DRIVE_NOT_SUPPORTED;
 
 //################################################################
@@ -3520,7 +3520,8 @@ int AutoDetectDrive( int SystemID )
         {
             if( extended.partitions[i].SystemID != EMPTY )
             {
-                local int64 newStart = startPos + extended.partitions[i].RelativeSector*(INT64)512;
+                // BUGBUG-4kn -- magic required here to support 4k sectors
+                local int64 newStart = startPos + extended.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
                 Printf("ADD()      : checking extended[%d] (%x)\r\n", i, newStart);
                 FSeek( newStart );
                 if( !DriveAlreadyExists(FTell()) )
@@ -3545,7 +3546,8 @@ int AutoDetectDrive( int SystemID )
         i = 0;
         while( exists( efi.partitions[i] ) )
         {
-            local int64 newStart = efi.partitions[i].FirstLBA*512;
+            // BUGBUG-4kn -- magic required here to support 4k sectors
+            local int64 newStart = efi.partitions[i].FirstLBA * DefaultSectorSize;
             Printf("ADD()      : checking EFI[%d] (%x)\r\n", i, newStart);
             FSeek( newStart );
             if( !AutoDetectDrive( -1 ) )
@@ -3596,12 +3598,17 @@ int AutoDetectDrive( int SystemID )
         Printf("ADD()      : adding HPFS\r\n");
         HFS_DRIVE drive;
         return true;
-//    } else if (detected & FILE_SYSTEM_TYPE_IFS) {
-//        Printf("ADD()      : adding IFS\r\n");
-//        IFS_BOOTSECTOR boot;
-//        return true;
+    } else if (detected & FILE_SYSTEM_TYPE_IFS) {
+        Printf("ADD()      : adding IFS\r\n");
+        IFS_BOOTSECTOR boot;
+        return true;
+    } else if (detected == FILE_SYSTEM_TYPE_NONE) {
+        Printf("ADD()      : No drive due to no valid detected file system at offset 0x%08x\r\n", startPos);
+        return false; // not found
     }
-    return false; // not found
+    Assert(!"Unsupported file system type?");
+    return false;
+
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3621,13 +3628,15 @@ local boolean AutoDetectDriveResult = AutoDetectDrive(-1);
 if (!AutoDetectDriveResult)
 {
     // Auto detect the MBR
+    // BUGBUG-4kn -- If MBR, how to detect 4k sector size?
+    //           Why?  how else to calculate proper offset for partition?
     local unsigned short mbr_boot_ok=0;
     local unsigned short i;
     local PARTITION_SYSTEMID SystemID[4];
     local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
     local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
     local FILE_SYSTEM_TYPE PreferredFS[4] = { FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE };
-    for(i=0;i<4;i++)
+    for ( i=0; i<4; i++ )
     {
         // Check BootIndicator and SystemID
         BootIndicator[i] = ReadUByte( 0x1BE + i*10h );
@@ -3640,15 +3649,16 @@ if (!AutoDetectDriveResult)
         {
             // If the above holds true, then we presume this is an MBR-based media
             // and thus initialize the MBR structure if not already having done so.
-            if(mbr_boot_ok==0)
+            if ( mbr_boot_ok == 0 )
             {
                 FSeek(0);
                 MASTER_BOOT_RECORD boot_mbr <bgcolor=cLtPurple>;
-                mbr_boot_ok=1;
+                mbr_boot_ok = 1;
             }
 
             // Jump to Partition using boot_mbr structure definition of partition
-            FSeek(boot_mbr.partitions[i].RelativeSector*(INT64)512);
+            // BUGBUG-4kn -- magic required here to support 4k sectors
+            FSeek(boot_mbr.partitions[i].RelativeSector*(INT64)DefaultSectorSize);
             
             // If the drive already exists (e.g., MBR+GPT both listing partitions)
             // then do not add the drive again
