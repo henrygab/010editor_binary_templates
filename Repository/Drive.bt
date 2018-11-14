@@ -1621,14 +1621,17 @@ typedef struct
     {
         // assert( !is_orphan );
         Cluster = FAT_CalculateCluster( short_entry, DriveNum );
-        if( Cluster > 2 )
+        if( Cluster >= 2 )
         {
             // Define data for this file
             FAT_JumpToCluster( Cluster, DriveNum );
-            if( (uchar)short_entry.Name[0] == 0xE5) 
+            if( (uchar)short_entry.Name[0] == 0xE5) {
                 FAT_FILE_DATA possibleDeletedData; // try to show the deleted information - may not be accurate
+            }
             else
-                FAT_FILE_DATA data;       
+            {
+                FAT_FILE_DATA data;
+            }
     
             // Define the sub-directory
             if( (short_entry.Attribute & FAT_ATTR_Directory) &&
