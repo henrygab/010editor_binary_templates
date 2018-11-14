@@ -628,17 +628,17 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     }
     local uint32 minBytes = 1 << 20; // Minimum number of bytes in exFAT volume?
     if (boot.FileSystemRevisionMajor != 1) {
-        Prinf("INVALID exFAT (%08x): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
+        Printf("INVALID exFAT (%08x): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
         return false;
     }
     if ((boot.BytesPerSectorShift < 9) || (boot.BytesPerSectorShift > 12)) {
-        Prinf("INVALID exFAT (%08x): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
+        Printf("INVALID exFAT (%08x): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
         return false;
     }
     local uint32 bytesPerSector = 1 < boot.BytesPerSectorShift;
     local uint32 minimumSectors = minBytes >> boot.BytesPerSectorShift;
     if (minimumSectors > boot.NumberOfSectors) {
-        Prinf("INVALID exFAT (%08x): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
+        Printf("INVALID exFAT (%08x): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
         return false;
     }
 
@@ -656,7 +656,7 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     for (i = 0; i < bytesPerSector; i+=4) {
         currentChecksum = ReadUInt(checksumStart + i);
         if (currentChecksum != firstChecksum) {
-            Prinf("INVALID exFAT (%08x): Checksum not repeated for entire sector[11] ... (non-equal at offset 0x%x, value 0x%08x != 0x%08x)\r\n", startof(boot), i, currentChecksum, firstChecksum);
+            Printf("INVALID exFAT (%08x): Checksum not repeated for entire sector[11] ... (non-equal at offset 0x%x, value 0x%08x != 0x%08x)\r\n", startof(boot), i, currentChecksum, firstChecksum);
             return false;
         }
     }
@@ -3548,7 +3548,7 @@ int AutoDetectDrive( int SystemID )
         while( exists( efi.partitions[i] ) )
         {
             // BUGBUG-4kn -- magic required here to support 4k sectors
-            local int64 newStart = efi.partitions[i].FirstLBA * DefaultSectorSize;
+            newStart = efi.partitions[i].FirstLBA * DefaultSectorSize;
             Printf("ADD()      : checking EFI[%d] (%x)\r\n", i, newStart);
             FSeek( newStart );
             if( !AutoDetectDrive( -1 ) )
