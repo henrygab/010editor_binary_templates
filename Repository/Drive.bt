@@ -3285,7 +3285,7 @@ typedef union
     struct MASTER_BOOT_RECORD mbr;
     struct FAT_BOOTSECTOR boot_fat;
     struct NTFS_BOOTSECTOR boot_ntfs;
-    strict IFS_BOOTSECTOR boot_ifs;
+    struct IFS_BOOTSECTOR boot_ifs;
 } DRIVE_NOT_SUPPORTED;
 
 //################################################################
