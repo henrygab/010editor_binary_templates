@@ -3,7 +3,7 @@
 //
 //      File: Drive.bt
 //   Authors: SweetScape Software, Benjamin Vernoux
-//   Version: 2.2
+//   Version: 2.4
 //   Purpose: Parse logical and physical drives including 
 //            MBR, FAT16, FAT32, HFS, NTFS and extended partitions.
 //            Can display subdirectories and data for individual
