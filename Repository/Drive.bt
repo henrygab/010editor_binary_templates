@@ -3478,6 +3478,7 @@ int AutoDetectDrive( int SystemID )
     local int    i <hidden=true>;
     local int64  startPos <hidden=true> = FTell();
     local string SystemIDAsString = ReadPARTITION_SYSTEMID(SystemID);
+    local int64  newStart;
 
     Printf("ADD() Enter: startPos = %08x, SystemID == %s\r\n", startPos, SystemIDAsString);
 
@@ -3521,7 +3522,7 @@ int AutoDetectDrive( int SystemID )
             if( extended.partitions[i].SystemID != EMPTY )
             {
                 // BUGBUG-4kn -- magic required here to support 4k sectors
-                local int64 newStart = startPos + extended.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
+                newStart = startPos + extended.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
                 Printf("ADD()      : checking extended[%d] (%x)\r\n", i, newStart);
                 FSeek( newStart );
                 if( !DriveAlreadyExists(FTell()) )
