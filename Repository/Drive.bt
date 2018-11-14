@@ -3,9 +3,9 @@
 //
 //      File: Drive.bt
 //   Authors: SweetScape Software, Benjamin Vernoux
-//   Version: 2.4
+//   Version: 2.6
 //   Purpose: Parse logical and physical drives including 
-//            MBR, FAT16, FAT32, HFS, NTFS and extended partitions.
+//            MBR, FAT12, FAT16, FAT32, HFS, NTFS and extended partitions.
 //            Can display subdirectories and data for individual
 //            files. Note that some NTFS drives
 //            may not work properly (see file comments).
@@ -13,8 +13,8 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
-//   2.6   2018-11-xx HenryGab: Add support for FAT12.
-//   2.4   2018-11-xx HenryGab: Fix file system recognition sequence, support partition-less media
+//   2.6   2018-11-14 HenryGab: Add support for FAT12.
+//   2.4   2018-11-13 HenryGab: Fix file system recognition sequence, support partition-less media
 //   2.2   2018-10-23 HenryGab: Fix multiple bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
 //   1.1   2016-06-14 SweetScape Software: Added support for EFI partitions.
@@ -866,6 +866,125 @@ boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
     return true;
 }
 
+// FAT12 FAT Table
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_MEDIA_HARD_DISK           = 0xff8,
+   FAT12_MEDIA_FLOPPY_DISK         = 0xff0
+} FAT12_MEDIA_TYPE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_PARTITION_NOT_IN_USE   = 0xfff,
+   FAT12_PARTITION_IN_USE       = 0xff7
+} FAT12_PARTITION_STATE <format=hex>;
+
+// Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+// Therefore, every usage will require the bitfield annotation (' : 12').
+typedef enum <ushort>
+{
+   FAT12_CLUSTER_FREE_CLUSTER   = 0x000,
+   FAT12_CLUSTER_RESERVED_0001  = 0x001,
+   FAT12_CLUSTER_RESERVED_FFF0  = 0xFF0,
+   FAT12_CLUSTER_RESERVED_FFF1  = 0xFF1,
+   FAT12_CLUSTER_RESERVED_FFF2  = 0xFF2,
+   FAT12_CLUSTER_RESERVED_FFF3  = 0xFF3,
+   FAT12_CLUSTER_RESERVED_FFF4  = 0xFF4,
+   FAT12_CLUSTER_RESERVED_FFF5  = 0xFF5,
+   FAT12_CLUSTER_RESERVED_FFF6  = 0xFF6,
+   FAT12_CLUSTER_BAD_CLUSTER    = 0xFF7,
+   FAT12_CLUSTER_END_OF_CHAIN_FFF8 = 0xFF8,
+   FAT12_CLUSTER_END_OF_CHAIN_FFF9 = 0xFF9,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFA = 0xFFA,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFB = 0xFFB,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFC = 0xFFC,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFD = 0xFFD,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFE = 0xFFE,
+   FAT12_CLUSTER_END_OF_CHAIN_FFFF = 0xFFF
+} FAT12_CLUSTER_INFO <read=ReadFAT12_CLUSTER_INFO>;
+
+string ReadFAT12_CLUSTER_INFO( FAT12_CLUSTER_INFO &info )
+{
+    if (info == FAT12_CLUSTER_FREE_CLUSTER) {
+        return "FREE_CLUSTER (000h)";
+    } else if (info == FAT12_CLUSTER_RESERVED_0001) {
+        return "RESERVED (001h)";
+    } else if (info >= 0xFF0 && info <= 0xFF6) {
+        local string s;
+        SPrintf(s, "RESERVED (%03xh)", info);
+        return s;
+    } else if (info == FAT12_CLUSTER_BAD_CLUSTER) {
+        return "BAD_CLUSTER (FF7h)";
+    } else if (info >= 0xFF8 && info <= 0xFFF) {
+        local string s;
+        SPrintf(s, "END_OF_CHAIN (%03xh)", info);
+        return s;
+    } else {
+        local string s;
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+        return s;
+    }
+}
+
+// FAT 16 Table
+// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
+typedef struct (DWORD CountOfDataClusters)
+{
+    Assert(CountOfDataClusters <= 4085);
+
+    local quad startFilePosition <hidden=true> = FTell();
+    local DWORD count_of_data_clusters = CountOfDataClusters;
+    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
+    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
+    // which will allow safely restoring the prior bitfield padding state.
+    // However, that functionality does not yet exist as of v9.0c.
+    BitfieldDisablePadding();
+
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 12').
+    FAT12_MEDIA_TYPE      MediaType      : 12;
+    // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+    // Therefore, every usage will require the bitfield annotation (' : 12').
+    FAT12_PARTITION_STATE PartitionState : 12;
+    
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // A loop such as below has the best chance of a future version
+    // collapsing the displayed array.
+    FSeek( startFilePosition );
+    local DWORD i <hidden=true> = CountOfDataClusters+2;
+    while (i > 0) {
+        // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
+        // Therefore, every usage will require the bitfield annotation (' : 12').
+        FAT12_CLUSTER_INFO Cluster : 12;
+        i -= 1;
+    }
+
+    // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
+    // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
+    // which will allow safely restoring the prior bitfield padding state.
+    // However, that functionality does not yet exist as of v9.0c.
+    BitfieldEnablePadding();
+
+} FAT12_FAT_TABLE_x <read=ReadFAT12_FAT_TABLE>;
+
+string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE_x &fat_table )
+{
+    // HACKHACK - Per Sweetscape support, there is also no way to create
+    // an array of bitfields that is shown collapsed (like "real" arrays),
+    // at least as of v9.0c.
+    // The entire purpose of this routine is to make the UI as similar
+    // as possible to an array.
+    local string s;
+    SPrintf(s, "enum FAT12_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
+    return s;
+}
 
 //################################################################
 // FAT16 Drives
@@ -978,13 +1097,12 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
         Assert((NumberOfCopiesOfFats==1) || (NumberOfCopiesOfFats==2));
         return;
     }
-    local unsigned char ClusterEntrySize=2;
 
     // show the first two entries as media type and partition status
     // TODO: Determine if FAT16 only supports 512 byte sectors
     local quad SectorSize = 512;
     local quad FatTable0FilePosition = FTell();
-    local quad EntriesPerFAT = SectorSize/ClusterEntrySize; // how many full entries per sector?
+    local quad EntriesPerFAT = SectorSize/2; // how many full entries per sector?
     EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
 
     FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
@@ -1026,7 +1144,6 @@ typedef struct
     local quad  FATTableFilePos;
     local quad  DataAreaFilePos;
     local DWORD ClusterSize;
-    local DWORD ClusterEntrySize;
     local quad  FATTableSector;
     local quad  FATTableSizeInSectors;
     local quad  RootDirEntrySector;
@@ -1034,6 +1151,7 @@ typedef struct
     local quad  DataAreaSector;
     local quad  VolumeStartPosition=FTell();
     local DWORD MaxValidCluster;
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_FAT16;
 
 
 
@@ -1051,7 +1169,6 @@ typedef struct
 	DataAreaSector        = RootDirEntrySector + ((boot_fat16.bpb_fat16.MaxRootDirEntries * 32) / BytesPerSector);
 	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
     ClusterSize           = BytesPerSector     * boot_fat16.bpb_fat16.SectorsPerCluster;
-    ClusterEntrySize      = 2;
     MaxValidCluster       = 0xFFEF;
     
     // FAT16 FAT Table
@@ -1185,10 +1302,9 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad S
         Assert((NumberOfCopiesOfFats==1) || (NumberOfCopiesOfFats==2));
         return;
     }
-    local unsigned char ClusterEntrySize=4;
 
     // FAT32 supports variable sector size
-    local quad EntriesPerFAT = SectorSize/ClusterEntrySize;          // how many full entries per sector?
+    local quad EntriesPerFAT = SectorSize/4;          // how many full entries per sector?
     EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
 
     // show the first two entries as media type and partition status
@@ -1226,7 +1342,6 @@ typedef struct
     local quad  FATTableFilePos;
     local quad  DataAreaFilePos;
     local DWORD ClusterSize;
-    local DWORD ClusterEntrySize;
     local quad  FATTableSector;
     local quad  FATTableSizeInSectors;
     local quad  RootDirEntrySector;
@@ -1234,6 +1349,7 @@ typedef struct
     local quad  DataAreaSector;
     local quad  VolumeStartPosition=FTell();
     local DWORD MaxValidCluster;
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_FAT16;
 
     // FAT32 Boot sector
     FAT32_BOOTSECTOR boot_fat32 <bgcolor=cLtPurple>;
@@ -1250,7 +1366,6 @@ typedef struct
 	DataAreaSector        = RootDirEntrySector;
 	DataAreaFilePos       = DataAreaSector     * BytesPerSector;
     ClusterSize           = BytesPerSector * boot_fat32.bpb_fat32.SectorsPerCluster;
-    ClusterEntrySize      = 4;
     MaxValidCluster       = 0x0FFFFFEF;
 
     // FAT32 FAT Table
@@ -1270,7 +1385,6 @@ typedef struct
     local quad  FirstFatTableFilePos;
     local quad  DataAreaFilePos;
     local DWORD ClusterSize;
-    local DWORD ClusterEntrySize;
     local quad  FatTableSector;
     local quad  FatTableAreaSizeInSectors;
     local quad  RootDirEntrySector;
@@ -1281,7 +1395,7 @@ typedef struct
     local int   i <hidden=true>;
 
 
-    // FAT16 Boot sector
+    // FAT Boot sector
     FAT_BOOTSECTOR boot_sector <bgcolor=cLtPurple>;
     if (!IsValidFatBootSector(boot_sector)) {
         Printf("INVALID FAT (%08x): Drive creation attempted when boot sector invalid?", startof(boot_sector));
@@ -1291,7 +1405,7 @@ typedef struct
     local quad  BytesPerSector = boot_sector.BytesPerSector;
     local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
 
-    // Calculate offsets -- FAT16
+    // Calculate offsets and sizes for file system areas
     FatTableSector            = CurrentPosSector   + boot_sector.ReservedSectors; // e.g., used for alignment on flash media
     RootDirEntrySector        = FatTableSector     + (boot_sector.SectorsPerFat * boot_sector.NumberOfFatTables);
     RootDirEntryFilePos       = RootDirEntrySector * BytesPerSector;
@@ -1302,11 +1416,13 @@ typedef struct
 	DataAreaFilePos           = DataAreaSector     * BytesPerSector;
     ClusterSize               = BytesPerSector     * boot_sector.SectorsPerCluster;
 
-    // BUGBUG-ClusterEntrySize: fix this to be based on drive[DriveNum].boot_sector.FsType ...
     MaxValidCluster           = boot_sector.MaximumValidClusterNumber;
 
+    // Add this to the Drive structure also
+    local FILE_SYSTEM_TYPE FsType   = boot_sector.FsType;
+
+    // Add the FAT structures
     local quad pos;
-    // TODO - create appropriate FAT tables
     for (i = 0; i < boot_sector.NumberOfFatTables; i++) {
         pos = FirstFatTableFilePos;
         pos += (boot_sector.SectorsPerFat * boot_sector.BytesPerSector * i);
@@ -1315,8 +1431,8 @@ typedef struct
             FAT32_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
         } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT16) {
             FAT16_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
-//        } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT12) {
-//            FAT12_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+        } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT12) {
+            FAT12_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
         }
     }
     
@@ -1923,11 +2039,16 @@ typedef struct (uint size, ULONG lengthLeft )
 // Extract starting cluster from a dir entry
 DWORD FAT_CalculateCluster( FAT_SHORTENTRY &entry, int DriveNum )
 {
-    // BUGBUG-ClusterEntrySize: fix this to be based on drive[DriveNum].boot_sector.FsType ...
-    if( drive[DriveNum].ClusterEntrySize == 4 )
+    // exFAT uses different types of directory entries,
+    // so cannot use this function for exFAT
+    Assert((FILE_SYSTEM_TYPE_FAT32 == drive[DriveNum].FsType) ||
+           (FILE_SYSTEM_TYPE_FAT16 == drive[DriveNum].FsType) ||
+           (FILE_SYSTEM_TYPE_FAT12 == drive[DriveNum].FsType));
+    
+    if (drive[DriveNum].FsType == FILE_SYSTEM_TYPE_FAT32) {
         return ((DWORD)entry.HighCluster << 16) | entry.Cluster; // fat32
-    else
-        return entry.Cluster; // fat16
+    }
+    return entry.Cluster; // FAT16 and FAT12
 }
 
 // FAT File data displayed as clusters
@@ -3653,10 +3774,10 @@ int AutoDetectDrive( int SystemID )
         FSeek(startPos);
         FAT_DRIVE drive;
         return true;
-//    } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
-//        Printf("ADD()      : adding FAT12\r\n");
-//        FAT12_DRIVE drive;
-//        return true;
+    } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
+        Printf("ADD()      : adding FAT12\r\n");
+        FAT_DRIVE drive;
+        return true;
     } else if (detected & FILE_SYSTEM_TYPE_NTFS) {
         Printf("ADD()      : adding NTFS\r\n");
         NTFS_DRIVE drive;
