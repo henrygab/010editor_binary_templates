@@ -13,6 +13,7 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
+//   2.6   2018-11-xx HenryGab: Add support for FAT12.
 //   2.4   2018-11-xx HenryGab: Fix file system recognition sequence, support partition-less media
 //   2.2   2018-10-23 HenryGab: Fix multiple bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
@@ -687,13 +688,15 @@ typedef struct FAT_BOOTSECTOR {
     WORD   EndOfSectorMarker  <format=hex>;
 
     // Helpers to make FAT12/16/32 more common
-    local DWORD NumberOfSectors = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
-    local DWORD SectorsPerFat   = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
+    local DWORD ClusterSize      = this.BytesPerSector * this.SectorsPerCluster;
+    local DWORD NumberOfSectors  = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
+    local DWORD SectorsPerFat    = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
     local DWORD CountOfDataClusters = ReadFAT_BOOTSECTOR_CountOfDataClusters(this);
     local DWORD MaximumValidClusterNumber = CountOfDataClusters + 1; // +2, but zero-based indexing, so largest valid value is Count+1
 
     local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
     if (CountOfDataClusters == 0) {
+        Printf("WARNING: Count of data clusters computed as zero, so not valid FAT filesystem\r\n");
         FsType = FILE_SYSTEM_TYPE_NONE; // oops
     } else if (CountOfDataClusters < 4085) {
         FsType = FILE_SYSTEM_TYPE_FAT12;
@@ -703,8 +706,45 @@ typedef struct FAT_BOOTSECTOR {
         FsType = FILE_SYSTEM_TYPE_FAT32;
     } else {
         FsType = FILE_SYSTEM_TYPE_NONE; // oops
-    }    
+    }
 };
+DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
+{
+    // First determine the number of bytes required.
+    local DWORD required_bytes <hidden=true>;
+    local DWORD required_entries <hidden=true>;
+    // FAT tracks two extra entries at indices 0 and 1...
+    required_entries = boot.CountOfDataClusters + 2;
+    if (boot.FsType == FILE_SYSTEM_TYPE_FAT32) {
+        // FAT32 never has sector-spanning entries
+        // FAT32 is four bytes per entry
+        required_bytes = 4 * required_entries;
+    } else if (boot.FsType == FILE_SYSTEM_TYPE_FAT16) {
+        // FAT16 never has sector-spanning entries
+        // FAT16 is two bytes per entry
+        required_bytes = 2 * required_entries;
+    } else if (boot.FsType == FILE_SYSTEM_TYPE_FAT12) {
+        // FAT12 has sector-spanning entries
+        // FAT12 has twelve BITS per entry
+        //       ... or two entries == three bytes
+        required_bytes = (required_entries / 2) * 3;
+        if (0 != (required_entries % 2)) {
+            required_bytes += 2;
+        }
+    } else {
+        Printf("INVALID FAT (%08x): Unsupported file system type when calling IsFatTableSizeSufficient()\r\n", startof(boot));
+        return false;
+    }
+
+    // convert the number of bytes to number of sectors (rounding up)
+    local DWORD required_sectors_per_fat <hidden=true>;
+    required_sectors_per_fat = required_bytes / boot.BytesPerSector;
+    if (0 != (required_bytes % boot.BytesPerSector)) {
+        required_sectors_per_fat += 1; // round up
+    }
+
+    return required_sectors_per_fat;    
+}
 
 DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
 {
@@ -816,6 +856,13 @@ boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
             return false;
         }
     }
+    local DWORD required_sectors_per_fat <hidden=true>;
+    required_sectors_per_fat = ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters(boot);
+    if (boot.SectorsPerFat < required_sectors_per_fat) {
+        Printf("INVALID FAT (%08x): 0x%x data clusters requires 0x%x sectors for each FAT, but boot indicates only 0x%x sectors per FAT.\r\n", startof(boot), boot.CountOfDataClusters, required_sectors_per_fat, boot.SectorsPerFAT);
+        return false;
+    }
+
     return true;
 }
 
@@ -934,16 +981,16 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
     local unsigned char ClusterEntrySize=2;
 
     // show the first two entries as media type and partition status
-    // FAT16 only supports 512 byte sectors
+    // TODO: Determine if FAT16 only supports 512 byte sectors
     local quad SectorSize = 512;
     local quad FatTable0FilePosition = FTell();
     local quad EntriesPerFAT = SectorSize/ClusterEntrySize; // how many full entries per sector?
     EntriesPerFAT *= SizeOfFatTableInSectors / NumberOfCopiesOfFats; // how many sectors per copy of the FAT?
 
-    FAT16_MEDIA_TYPE      MediaType;
-    FAT16_PARTITION_STATE PartitionState;
+    FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
+    FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
 
-    // but then seek back, so array indices will correspond to stored values in the chain
+    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
     FSeek( FatTable0FilePosition );
     FAT16_CLUSTER_INFO    Cluster[ EntriesPerFAT ];
 
@@ -956,6 +1003,21 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats)
         FAT16_CLUSTER_INFO    ClusterCopy[ EntriesPerFAT ];
     }
 } FAT16_FAT_TABLE;
+
+// FAT 16 Table
+// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
+typedef struct (quad CountOfDataClusters)
+{
+    local quad start = FTell();
+    // show the first two entries as media type and partition status
+    // FAT16 only supports 512 byte sectors(?)
+    FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
+    FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
+
+    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
+    FSeek( start );
+    FAT16_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
+} FAT16_FAT_TABLE_x;
 
 // Define a FAT 16 Drive
 typedef struct
@@ -1147,6 +1209,16 @@ typedef struct (quad SizeOfFatTableInSectors, UBYTE NumberOfCopiesOfFats, quad S
     }
 } FAT32_FAT_TABLE;
 
+// NOTE: the first argument is the *COUNT* of data clusters (not maximum cluster number / index)
+typedef struct (DWORD CountOfDataClusters)
+{
+    local quad start = FTell();
+    FAT32_MEDIA_TYPE      MediaType;
+    FAT32_PARTITION_STATE PartitionState;
+    FSeek( start );
+    FAT32_CLUSTERINFO    Cluster[ CountOfDataClusters + 2 ];
+} FAT32_FAT_TABLE_x;
+
 // Define a FAT 32 Drive
 typedef struct
 {
@@ -1190,6 +1262,69 @@ typedef struct
     FAT_DIRECTORY root_dir;
 
 } FAT32_DRIVE <open=true>;
+
+// Define a FAT 12/16/32 combined drive type
+typedef struct
+{
+    local int   DriveNum = NumDrives++; // keep track of the index of this drive
+    local quad  FirstFatTableFilePos;
+    local quad  DataAreaFilePos;
+    local DWORD ClusterSize;
+    local DWORD ClusterEntrySize;
+    local quad  FatTableSector;
+    local quad  FatTableAreaSizeInSectors;
+    local quad  RootDirEntrySector;
+    local quad  RootDirEntryFilePos;
+    local quad  DataAreaSector;
+    local quad  VolumeStartPosition=FTell();
+    local DWORD MaxValidCluster;
+    local int   i <hidden=true>;
+
+
+    // FAT16 Boot sector
+    FAT_BOOTSECTOR boot_sector <bgcolor=cLtPurple>;
+    if (!IsValidFatBootSector(boot_sector)) {
+        Printf("INVALID FAT (%08x): Drive creation attempted when boot sector invalid?", startof(boot_sector));
+        return;
+    }
+
+    local quad  BytesPerSector = boot_sector.BytesPerSector;
+    local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
+
+    // Calculate offsets -- FAT16
+    FatTableSector            = CurrentPosSector   + boot_sector.ReservedSectors; // e.g., used for alignment on flash media
+    RootDirEntrySector        = FatTableSector     + (boot_sector.SectorsPerFat * boot_sector.NumberOfFatTables);
+    RootDirEntryFilePos       = RootDirEntrySector * BytesPerSector;
+    FirstFatTableFilePos      = FatTableSector     * BytesPerSector;
+    FatTableAreaSizeInSectors = RootDirEntrySector - FatTableSector;
+
+	DataAreaSector            = RootDirEntrySector + ((boot_sector.MaxRootDirEntries * 32) / BytesPerSector);
+	DataAreaFilePos           = DataAreaSector     * BytesPerSector;
+    ClusterSize               = BytesPerSector     * boot_sector.SectorsPerCluster;
+
+    // BUGBUG-ClusterEntrySize: fix this to be based on drive[DriveNum].boot_sector.FsType ...
+    MaxValidCluster           = boot_sector.MaximumValidClusterNumber;
+
+    local quad pos;
+    // TODO - create appropriate FAT tables
+    for (i = 0; i < boot_sector.NumberOfFatTables; i++) {
+        pos = FirstFatTableFilePos;
+        pos += (boot_sector.SectorsPerFat * boot_sector.BytesPerSector * i);
+        FSeek(pos);
+        if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT32) {
+            FAT32_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+        } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT16) {
+            FAT16_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+//        } else if (boot_sector.FsType == FILE_SYSTEM_TYPE_FAT12) {
+//            FAT12_FAT_TABLE_x table(boot_sector.CountOfDataClusters);
+        }
+    }
+    
+    // FAT Directory Entry
+    FSeek( RootDirEntryFilePos );
+    FAT_DIRECTORY root_dir;
+
+} FAT_DRIVE <open=true>;
 
 //################################################################
 // FAT Directory (Shared between FAT12, FAT16 and FAT32)
@@ -1788,6 +1923,7 @@ typedef struct (uint size, ULONG lengthLeft )
 // Extract starting cluster from a dir entry
 DWORD FAT_CalculateCluster( FAT_SHORTENTRY &entry, int DriveNum )
 {
+    // BUGBUG-ClusterEntrySize: fix this to be based on drive[DriveNum].boot_sector.FsType ...
     if( drive[DriveNum].ClusterEntrySize == 4 )
         return ((DWORD)entry.HighCluster << 16) | entry.Cluster; // fat32
     else
@@ -1799,7 +1935,6 @@ typedef struct
 {
     local int    DriveNum         = parentof(this).DriveNum; // keep track of which drive this belongs to
     local DWORD  ClusterSize      = drive[DriveNum].ClusterSize;
-    local DWORD  ClusterEntrySize = drive[DriveNum].ClusterEntrySize;
     local DWORD  Cluster          = FAT_CalculateCluster( parentof(this).short_entry, DriveNum );
     local DWORD  FirstCluster     = Cluster;
     local DWORD  MaxValidCluster  = drive[DriveNum].MaxValidCluster;
@@ -3509,10 +3644,14 @@ int AutoDetectDrive( int SystemID )
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
         Printf("ADD()      : adding FAT32\r\n");
         FAT32_DRIVE drive;
+        FSeek(startPos);
+        FAT_DRIVE drive;
         return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT16) {
         Printf("ADD()      : adding FAT16\r\n");
         FAT16_DRIVE drive;
+        FSeek(startPos);
+        FAT_DRIVE drive;
         return true;
 //    } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
 //        Printf("ADD()      : adding FAT12\r\n");
