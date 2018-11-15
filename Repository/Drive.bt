@@ -345,7 +345,7 @@ typedef struct
    UBYTE           BootCode[446] <format=hex>;
    PARTITION_ENTRY partitions[4];
    WORD            EndOfSectorMarker <format=hex>;
-} MASTER_BOOT_RECORD <open=true>;
+} MASTER_BOOT_RECORD;
 
 // Extended partition
 typedef struct 
@@ -516,7 +516,7 @@ typedef struct
             EFI_PARTITION_ENTRY partitions[count] <optimize=true>;
     }
 
-} EFI_PARTITION <open=true>;
+} EFI_PARTITION;
 
 //################################################################
 // File system support section
@@ -674,9 +674,13 @@ typedef struct (UBYTE BytesPerSectorShift) {
 } EXFAT_BOOT_EXTENDED_SECTOR;
 
 typedef struct {
-    GUID ParamterGuid;
+    GUID ParameterGuid;
     UBYTE CustomDefined[32];  // meaning depends upon the GUID
-} EXFAT_OEM_PARAMETER_TEMPLATE;
+} EXFAT_OEM_PARAMETER_TEMPLATE <read=ReadEXFAT_OEM_PARAMETER_TEMPLATE>;
+
+string ReadEXFAT_OEM_PARAMETER_TEMPLATE(EXFAT_OEM_PARAMETER_TEMPLATE &p) {
+    return ReadGUID(p.ParameterGuid);
+}
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
@@ -708,7 +712,10 @@ typedef struct (UBYTE BytesPerSectorShift) {
     local DWORD i <hidden=true>;
     local boolean InternallyValid = 1;
     for (i = 0; InternallyValid && i < checksumCopies; i++) {
-        InternallyValid &= (Checksum[0] == Checksum[i]) ? 1 : 0;
+        if (Checksum[0] != Checksum[i]) {
+            Printf("INVALID exFAT (%08x): Checksum sector value differs at index %xh, value 0x%08x != 0x%08x\r\n", startof(boot), i, Checksum[0], Checksum[i]);
+            InternallyValid = 0;
+        }
     }
 } EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR>;
 
@@ -720,7 +727,7 @@ string ReadEXFAT_BOOT_CHECKSUM_SECTOR( EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
 
 typedef struct {
     local DWORD i <hidden=true>;
-    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE; // used to detect validity
+    local boolean InternallyValid = 0; // used to detect validity
 
     EXFAT_BOOTSECTOR Boot;
     if (this.Boot.InternallyValid == 0) {
@@ -738,17 +745,19 @@ typedef struct {
     EXFAT_BOOT_RESERVED_SECTOR ReservedSector(this.Boot.BytesPerSectorShift);
     EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(this.Boot.BytesPerSectorShift);
     if (this.ChecksumSector.InternallyValid == 0) {
-        Printf("EXFAT (0x%08x):  Boot region checksum sector internally invalid\r\n", startof(this));
         return;
     }
-    local DWORD expectedChecksum = CalculateExpectedExfatBootRegionChecksum(this);
-    if (this.ChecksumSector.Checksum[0] != expectedChecksum) {
-        Printf("EXFAT (0x%08x):  Boot region checksum value (0x%08x) does not match calculated value (0x%08x)\r\n", startof(this), this.ChecksumSector.Checksum[0], expectedChecksum);
-        return;
-    }
-    FsType = FILE_SYSTEM_TYPE_EXFAT;
-} EXFAT_BOOT_REGION;
+    local DWORD ExpectedChecksum = CalculateExpectedExfatBootRegionChecksum(this);
+    
+    this.InternallyValid = IsValidExfatBootRegion(this);    
 
+} EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION>;
+
+string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
+    if (!boot_region.InternallyValid) { return "Invalid"; }
+    string s = SPrintf(s, "EXFAT (s/n %08Xh)", boot_region.Boot.VolumeSerialNumber);
+    return s;
+}
 
 
 boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
@@ -789,6 +798,9 @@ DWORD CalculateExpectedExfatBootRegionChecksum(EXFAT_BOOT_REGION &boot_region) {
 }
 
 DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBYTE BytesPerSectorShift) {
+    
+    Printf("EXFAT (0x%08x): Calculating checksum with %d bytes per sector shift", start, BytesPerSectorShift);
+
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
     local DWORD bytesPerSector <hidden=true> = 1 << BytesPerSectorShift;
     local DWORD totalBytesToChecksum <hidden=true> = bytesPerSector * 11;
