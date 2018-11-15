@@ -36,7 +36,7 @@
 LittleEndian(); 
 local int NumDrives = 0;
 
-local const DWORD DefaultSectorSize = 512;
+local const DWORD DefaultSectorSize <hidden=true> = 512;
 local DWORD DetectedSectorSize = 0; // set to either 512 or 4096, as needed
 
 typedef enum <int> {
@@ -235,9 +235,9 @@ typedef enum <uchar>
 // hack to allow printing this when using an integer instead of byte....
 string ReadPARTITION_SYSTEMID( int SystemIdAsInteger )
 {
-    local string result = "";
+    local string result <hidden=true> = "";
     if (SystemIdAsInteger >= 0 && SystemIdAsInteger <= 0xFF) {
-        local PARTITION_SYSTEMID tmp = (PARTITION_SYSTEMID)SystemIdAsInteger;
+        local PARTITION_SYSTEMID tmp <hidden=true> = (PARTITION_SYSTEMID)SystemIdAsInteger;
         result = EnumToString(tmp);
     }
     if (Strlen(result) == 0) {
@@ -287,7 +287,7 @@ string ReadGUID( GUID &g )
 {
     local boolean was_big_endian <hidden=true> = IsBigEndian();
     LittleEndian();
-    local string s;
+    local string s <hidden=true>;
     SPrintf( s, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
         g.Part1, g.Part2, g.Part3, g.Part4[0], g.Part4[1],
         g.Part5[0], g.Part5[1], g.Part5[2], g.Part5[3], g.Part5[4], g.Part5[5] );
@@ -298,7 +298,7 @@ int WriteGUID( GUID &g, string s )
 {
     local boolean was_big_endian <hidden=true> = IsBigEndian();
     LittleEndian();
-    local int result = -1; // per docs, return 0 on success, -1 on failure
+    local int result <hidden=true> = -1; // per docs, return 0 on success, -1 on failure
     if (IsValidGuidString(s)) {    
         // copy from ReadGUID() function
         SScanf( s, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
@@ -333,7 +333,7 @@ typedef struct
 // Show SystemID beside each partition
 string ReadPARTITION_ENTRY( PARTITION_ENTRY &p )
 {
-    string s = EnumToString( p.SystemID );
+    local string s <hidden=true> = EnumToString( p.SystemID );
     if( Strlen(s) == 0 )
         SPrintf( s, "(%d)", p.SystemID );
     return s;
@@ -468,7 +468,7 @@ typedef struct
     wchar_t  Name[36];
 
     // Some partitions may have extra space at the end
-    local int size = parentof(this).header.PartitionSize;
+    local int size <hidden=true> = parentof(this).header.PartitionSize;
     if( size > 128 )
         UBYTE   Unused[ size - 128 ] <format=hex>;
 } EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>;
@@ -506,7 +506,7 @@ typedef struct
     if( header.Signature == "EFI PART" )
     {
         // Count valid partitions
-        local int count = 0;
+        local int count <hidden=true> = 0;
         while( (ReadUQuad(FTell()+count*header.PartitionSize) != 0) 
                 && (count < header.NumPartitions) )
             count++;
@@ -541,7 +541,7 @@ Assert((MAX_UINT32 ^ (FILE_SYSTEM_TYPE_INVALID_MASK | FILE_SYSTEM_TYPE_VALID_MAS
 
 string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
     if (type == FILE_SYSTEM_TYPE_NONE) { return "FILE_SYSTEM_TYPE_NONE"; }
-    local string result = "";
+    local string result <hidden=true> = "";
     if (type & FILE_SYSTEM_TYPE_EXFAT ) { result += "| EXFAT"; }
     if (type & FILE_SYSTEM_TYPE_FAT32 ) { result += "| FAT32"; }
     if (type & FILE_SYSTEM_TYPE_FAT16 ) { result += "| FAT16"; }
@@ -549,9 +549,9 @@ string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
     if (type & FILE_SYSTEM_TYPE_HPFS  ) { result += "| HPFS"; }
     if (type & FILE_SYSTEM_TYPE_NTFS  ) { result += "| NTFS"; }
     if (type & FILE_SYSTEM_TYPE_IFS   ) { result += "| IFS"; }
-    local uint32 invalidFlags = ((uint32)type) & FILE_SYSTEM_TYPE_INVALID_MASK;
+    local uint32 invalidFlags <hidden=true> = ((uint32)type) & FILE_SYSTEM_TYPE_INVALID_MASK;
     if (0 != invalidFlags) {
-        local string tmp;
+        local string tmp <hidden=true>;
         SPrintf(tmp, "| 0x%x", type & invalidFlags);
         result += tmp;
     }
@@ -583,10 +583,10 @@ typedef struct IFS_BOOTSECTOR { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Mi
 // use a larger type to allow non-valid values (any value over 0xFFFF) to indicate errors
 UINT32 Calculate_IFS_BOOTSECTOR_Checksum( IFS_BOOTSECTOR& boot )
 {
-    local USHORT result = 0;
-    local USHORT i = 0;
-    local int64  start = startof(boot);
-    local int64  end = start + boot.Length;
+    local USHORT result <hidden=true> = 0;
+    local USHORT i <hidden=true> = 0;
+    local int64  start <hidden=true> = startof(boot);
+    local int64  end <hidden=true> = start + boot.Length;
     
     // If the IFS structure is not variable-lenght, then length MUST be 24 for a valid checksum
     if (!IFS_VARIABLE_LENGTH_STRUCTURE) {
@@ -656,8 +656,7 @@ typedef struct EXFAT_BOOTSECTOR {
         // and some fields whose sole purpose is simplify (duck-typing) usage by common FAT12/16/32 and exFAT code
         local  uint16 BytesPerSector    <format=hex> = 1 << BytesPerSectorShift;
         local  byte   SectorsPerCluster <format=hex> = 1 << SectorsPerClusterShift;
-        local  uint16 MaxRootDirEntries              = 0;
-        local  uint32 MaximumValidClusterNumber      = CountOfDataClusters + 1;
+        local  uint32 MaximumValidClusterNumber = CountOfDataClusters + 1;
         if (BytesPerSector > DefaultSectorSize) {
             // ensure boot sector takes entire sector of data
             BYTE Undefined[BytesPerSector - DefaultSectorSize];
@@ -765,11 +764,11 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     // EXFAT specifies quite a bit...
     if (boot.EndOfSectorMarker != 0xAA55) { return false; }
     // validate those MustBeZero bytes actually are zero
-    local int i = 0;
+    local int i <hidden=true> = 0;
     for (i = 0; i < 53; i++) {
         if (boot.MustBeZero[i] != 0) { return false; }
     }
-    local uint32 minBytes = 1 << 20; // Minimum number of bytes in exFAT volume?
+    local uint32 minBytes <hidden=true> = 1 << 20; // Minimum number of bytes in exFAT volume?
     if (boot.FileSystemRevisionMajor != 1) {
         Printf("INVALID exFAT (%08x): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
         return false;
@@ -778,8 +777,8 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
         Printf("INVALID exFAT (%08x): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
         return false;
     }
-    local uint32 bytesPerSector = 1 < boot.BytesPerSectorShift;
-    local uint32 minimumSectors = minBytes >> boot.BytesPerSectorShift;
+    local uint32 bytesPerSector <hidden=true> = 1 < boot.BytesPerSectorShift;
+    local uint32 minimumSectors <hidden=true> = minBytes >> boot.BytesPerSectorShift;
     if (minimumSectors > boot.NumberOfSectors) {
         Printf("INVALID exFAT (%08x): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
         return false;
@@ -901,17 +900,17 @@ string ReadFAT12_CLUSTER_INFO( FAT12_CLUSTER_INFO &info )
     } else if (info == FAT12_CLUSTER_RESERVED_0001) {
         return "RESERVED (001h)";
     } else if (info >= 0xFF0 && info <= 0xFF6) {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "RESERVED (%03xh)", info);
         return s;
     } else if (info == FAT12_CLUSTER_BAD_CLUSTER) {
         return "BAD_CLUSTER (FF7h)";
     } else if (info >= 0xFF8 && info <= 0xFFF) {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "END_OF_CHAIN (%03xh)", info);
         return s;
     } else {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
         return s;
     }
@@ -957,17 +956,17 @@ string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
     } else if (info == FAT16_CLUSTER_RESERVED_0001) {
         return "RESERVED (0001h)";
     } else if (info >= 0xFFF0 && info <= 0xFFF6) {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "RESERVED (%04xh)", info);
         return s;
     } else if (info == FAT16_CLUSTER_BAD_CLUSTER) {
         return "BAD_CLUSTER (FFF7h)";
     } else if (info >= 0xFFF8 && info <= 0xFFFF) {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "END_OF_CHAIN (%04xh)", info);
         return s;
     } else {
-        local string s;
+        local string s <hidden=true>;
         SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
         return s;
     }
@@ -1016,9 +1015,9 @@ typedef enum <ulong>
 string ReadFAT32_CLUSTER_INFO( FAT32_CLUSTER_INFO &info )
 {
     // Top four bits are reserved
-    ulong tmp = info & 0x0FFFFFFF;
-    ulong reserved_bits = info & 0xF0000000;
-    string s = "";
+    local ulong tmp <hidden=true> = info & 0x0FFFFFFF;
+    local ulong reserved_bits <hidden=true> = info & 0xF0000000;
+    local string s <hidden=true> = "";
 
     if (tmp == FAT32_CLUSTER_FREE) {
         s += "FREE_CLUSTER (00000000h)";
@@ -1084,14 +1083,14 @@ string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE &fat_table )
     // at least as of v9.0c.
     // The entire purpose of this routine is to make the UI as similar
     // as possible to an array.
-    local string s;
+    local string s <hidden=true>;
     SPrintf(s, "enum FAT12_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
     return s;
 }
 
 typedef struct (quad CountOfDataClusters)
 {
-    local quad start = FTell();
+    local quad start <hidden=true> = FTell();
     // show the first two entries as media type and partition status
     // FAT16 only supports 512 byte sectors(?)
     FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
@@ -1104,7 +1103,7 @@ typedef struct (quad CountOfDataClusters)
 
 typedef struct (DWORD CountOfDataClusters)
 {
-    local quad start = FTell();
+    local quad start <hidden=true> = FTell();
     local DWORD count_of_data_clusters = CountOfDataClusters;
 
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
@@ -1136,7 +1135,7 @@ string ReadFAT32_FAT_TABLE( FAT32_FAT_TABLE &fat_table )
     // at least as of v9.0c.
     // The entire purpose of this routine is to make the UI as similar
     // as possible to an array.
-    local string s;
+    local string s <hidden=true>;
     SPrintf(s, "enum FAT32_CLUSTER_INFO Cluster[%d]", fat_table.count_of_data_clusters);
     return s;
 }
@@ -1257,21 +1256,21 @@ DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
     }
 
     // First, the number of sectors in the special root directory area
-    local DWORD  rootDirectoryByteCount = boot.MaxRootDirEntries * 32;
-    local DWORD  rootDirectorySectors = rootDirectoryByteCount / boot.BytesPerSector;
+    local DWORD  rootDirectoryByteCount <hidden=true> = boot.MaxRootDirEntries * 32;
+    local DWORD  rootDirectorySectors <hidden=true> = rootDirectoryByteCount / boot.BytesPerSector;
     if (rootDirectoryByteCount % boot.BytesPerSector != 0) {
         rootDirectorySectors++;
     }
 
     // Next, the number of sectors in the data region
-    local DWORD sectorsPerFat = boot.SectorsPerFat;
-    local DWORD totalSectors = boot.NumberOfSectors;
-    local DWORD dataSectors = totalSectors;
+    local DWORD sectorsPerFat <hidden=true> = boot.SectorsPerFat;
+    local DWORD totalSectors <hidden=true> = boot.NumberOfSectors;
+    local DWORD dataSectors <hidden=true> = totalSectors;
     dataSectors -= boot.ReservedSectors;
     dataSectors -= boot.NumberOfFatTables * sectorsPerFat;
     dataSectors -= rootDirectorySectors;
 
-    local DWORD countOfClusters = dataSectors / boot.SectorsPerCluster; // note that this rounds down
+    local DWORD countOfClusters <hidden=true> = dataSectors / boot.SectorsPerCluster; // note that this rounds down
     return countOfClusters;
 }
 boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
@@ -1415,7 +1414,7 @@ typedef struct
     local FILE_SYSTEM_TYPE FsType   = boot_sector.FsType;
 
     // Add the FAT structures
-    local quad pos;
+    local quad pos <hidden=true>;
     for (i = 0; i < boot_sector.NumberOfFatTables; i++) {
         pos = FirstFatTableFilePos;
         pos += (boot_sector.SectorsPerFat * boot_sector.BytesPerSector * i);
@@ -1481,12 +1480,12 @@ local const uchar FAT_ATTR_TYPE_VALID_MASK <hidden=true> = 0x3F;
 
 string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
 {
-    local uchar tmp = type & FAT_ATTR_TYPE_VALID_MASK; // top two bits are reserved
-    local string s;
+    local uchar tmp <hidden=true> = type & FAT_ATTR_TYPE_VALID_MASK; // top two bits are reserved
+    local string s <hidden=true>;
     if (tmp == FAT_ATTR_LongFileNameEntry) {
         s += "LongFileNameEntry";
     } else {
-        local uchar bitsFound = 0;
+        local uchar bitsFound <hidden=true> = 0;
         if (tmp & FAT_ATTR_ReadOnly) {
             if ( bitsFound) {
                 s += "_";
@@ -1534,9 +1533,9 @@ string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
         }
     }
 
-    local uchar tmp2 = type & FAT_ATTR_TYPE_RESERVED_MASK;
+    local uchar tmp2 <hidden=true> = type & FAT_ATTR_TYPE_RESERVED_MASK;
     if (tmp2) {
-        string q;
+        local string q <hidden=true>;
         SPrintf(q, " + (Reserved bits) %02xh", tmp2);
         s += q;
     }
@@ -1567,23 +1566,23 @@ string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
     {
         return "";  // indicator of last directory entry
     }
-    local int nameLength = 8;
-    local int extensionLength = 3;
+    local int nameLength <hidden=true> = 8;
+    local int extensionLength <hidden=true> = 3;
     while (nameLength      > 0 && f.Name     [ nameLength      - 1 ] == ' ') { nameLength      -= 1; }
     while (extensionLength > 0 && f.Extension[ extensionLength - 1 ] == ' ') { extensionLength -= 1; }
-    local string name;
-    local string extension;
+    local string name <hidden=true>;
+    local string extension <hidden=true>;
     if (nameLength      > 0) { Strncpy(name,      f.Name,      nameLength     ); }
     if (extensionLength > 0) { Strncpy(extension, f.Extension, extensionLength); }
     
     // Add period only if extension exists, unless it's a FAT_ATTR_LongFileNameEntry or FAT_ATTR_VolumeID
-    local int addPeriod = extensionLength > 0;
+    local int addPeriod <hidden=true> = extensionLength > 0;
     if (f.Attribute == FAT_ATTR_LongFileNameEntry) {
         addPeriod = false;
     } else if (f.Attribute & FAT_ATTR_VolumeId) {
         addPeriod = false;
     }
-    local string result = name;
+    local string result <hidden=true> = name;
     if (addPeriod) { result += "."; }
     result += extension;
 
@@ -1601,7 +1600,7 @@ string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
 }
 string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
 {
-    string s;
+    local string s <hidden=true>;
     if(f.Name[0]==0)
     {
         return "Last Dir Entry (Empty)";
@@ -1706,7 +1705,7 @@ int FAT_CheckDirEntryRead( int DriveNum )
         XYZZY_IsFirstCluster = false; // really means more than one cluster....
         // Hit the end of the cluster
         // Must jump to the next cluster ....
-        local DWORD Cluster = FAT_AddressToCluster( XYZZY_Start, DriveNum );
+        local DWORD Cluster <hidden=true> = FAT_AddressToCluster( XYZZY_Start, DriveNum );
         
         // current position is actually in next cluster,
         // so use prior cluster number  
@@ -1731,13 +1730,13 @@ int FAT_IsDirectoryEntryLFN( int64 directoryEntryStart )
 {
     // per Microsoft specification, the correct check is:
     // (((LDIR_attr & ATTR_LONG_NAME_MASK) == ATTR_LONG_NAME) && (LDIR_Ord != 0xE5))
-    local byte firstByte = ReadByte( directoryEntryStart );
-    local byte type = FAT_DirectoryEntryType(directoryEntryStart);
+    local byte firstByte <hidden=true> = ReadByte( directoryEntryStart );
+    local byte type <hidden=true> = FAT_DirectoryEntryType(directoryEntryStart);
     return (type == FAT_ATTR_LongFileNameEntry) && (firstByte != 0xE5);
 }
 int FAT_IsDirectoryEntryVolumeID( int64 directoryEntryStart )
 {
-    local byte type = FAT_DirectoryEntryType(directoryEntryStart);
+    local byte type <hidden=true> = FAT_DirectoryEntryType(directoryEntryStart);
     return ( !FAT_IsDirectoryEntryLFN(directoryEntryStart) && ((type & FAT_ATTR_VolumeId) != 0) );
 }
 
@@ -1746,8 +1745,8 @@ typedef struct
 {
     // Copy offset info from parent
     local int   DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
-    local int   i;
-    local DWORD Cluster;
+    local int   i <hidden=true>;
+    local DWORD Cluster <hidden=true>;
     local uchar is_orphan = 0;
     local uchar is_complete = 0;
     local uchar end_of_fat_chain = 0;
@@ -1756,12 +1755,12 @@ typedef struct
     XYZZY_End = FTell();
     XYZZY_IsFirstCluster = true;
     
-    local int tmp = FAT_IsDirectoryEntryLFN(FTell());
+    local int tmp <hidden=true> = FAT_IsDirectoryEntryLFN(FTell());
 
     if( FAT_IsDirectoryEntryLFN(FTell()) )  // LFN Entry
     {
-        local unsigned char NumberOfLFNEntry;
-        local unsigned char dirname0;
+        local unsigned char NumberOfLFNEntry <hidden=true>;
+        local unsigned char dirname0 <hidden=true>;
         dirname0 = ReadByte(FTell());
         if( !(dirname0 == 0x00) ) // 0x00 indicates no more valid directory entries follow this entry
         {
@@ -1795,7 +1794,7 @@ typedef struct
 
                 NumberOfLFNEntry = long_entry.LFN.LFN_RecordSeqNum.LFN_RecSeqNum;
 
-                local unsigned char expectedLfnEntry = NumberOfLFNEntry;
+                local unsigned char expectedLfnEntry <hidden=true> = NumberOfLFNEntry;
                 for( i = 1; (!end_of_fat_chain) && (i < NumberOfLFNEntry); i++)
                 {
                     expectedLfnEntry -= 1;
@@ -1888,7 +1887,7 @@ typedef struct
             }
         }
     }
-    local int64 myEnd = XYZZY_End;
+    local int64 myEnd <hidden=true> = XYZZY_End;
     // TODO: Determine if there is a bug here, related to the global variable XYZZY_End.
     //       This seems likely, when two nested directories each take >1 cluster (e.g., txFAT).
     //       e.g., create \Level1\Level2\Level3\, each with files before and after the subdirectory.
@@ -1933,8 +1932,8 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
     if ( !exists( f.long_entry ) ) return "";
 
     // use number from LFN sequence number, or count of erased entries
-    local unsigned short NumberOfLFNEntries;
-    local int i;
+    local unsigned short NumberOfLFNEntries <hidden=true>;
+    local int i <hidden=true>;
     if( f.long_entry[0].LFN.LFN_RecordSeqNum.LFN_Erased == 1 )
     {
         for ( i = 0; i < 63; i++ )
@@ -1956,7 +1955,7 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
     }
 
     // start at the last of the LFN entries, work the way backwards.
-    local wstring filename;
+    local wstring filename <hidden=true>;
     for( i = NumberOfLFNEntries - 1; i >= 0; i-- )
     {
         filename += f.long_entry[i].UnicodeChar1; // TODO: Correct name to reflect this is a wstr, not wchar
@@ -1968,7 +1967,7 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
     filename += f.long_entry[0].UnicodeChar3; // TODO: Correct name to reflect this is a wstr, not wchar
     
     // Finally, if the resulting filename has any 0xFFFF characters, trim everything past that point.
-    local int endPos = WStrchr( filename , 0xFFFF );
+    local int endPos <hidden=true> = WStrchr( filename , 0xFFFF );
     if (endPos != -1)
     {
         filename  = WSubStr( filename , 0, endPos );
@@ -1978,10 +1977,10 @@ wstring ReadFAT_DIRECTORY_ENTRY_SET_LongFilename( FAT_DIRECTORY_ENTRY_SET &f )
 
 wstring ReadFAT_DIRECTORY_ENTRY_SET( FAT_DIRECTORY_ENTRY_SET &f )
 {
-    local unsigned short i;
-    local unsigned short NumberOfLFNEntry;
-    local wstring filename  = "";
-    local wstring attributeInfo = "";
+    local unsigned short i <hidden=true>;
+    local unsigned short NumberOfLFNEntry <hidden=true>;
+    local wstring filename <hidden=true>  = "";
+    local wstring attributeInfo <hidden=true> = "";
 
     if ( exists( f.long_entry ) )
     {
@@ -2046,12 +2045,12 @@ DWORD FAT_CalculateCluster( FAT_SHORTENTRY &entry, int DriveNum )
 // FAT File data displayed as clusters
 typedef struct
 {
-    local int    DriveNum         = parentof(this).DriveNum; // keep track of which drive this belongs to
-    local DWORD  ClusterSize      = drive[DriveNum].ClusterSize;
-    local DWORD  Cluster          = FAT_CalculateCluster( parentof(this).short_entry, DriveNum );
-    local DWORD  FirstCluster     = Cluster;
-    local DWORD  MaxValidCluster  = drive[DriveNum].MaxValidCluster;
-    local ULONG  SizeLeft         = parentof(this).short_entry.FileSizeInBytes;
+    local int    DriveNum <hidden=true>         = parentof(this).DriveNum; // keep track of which drive this belongs to
+    local DWORD  ClusterSize <hidden=true>      = drive[DriveNum].ClusterSize;
+    local DWORD  Cluster <hidden=true>          = FAT_CalculateCluster( parentof(this).short_entry, DriveNum );
+    local DWORD  FirstCluster                   = Cluster;
+    local DWORD  MaxValidCluster <hidden=true>  = drive[DriveNum].MaxValidCluster;
+    local ULONG  SizeLeft <hidden=true>         = parentof(this).short_entry.FileSizeInBytes;
 
     // Define clusters
     while(1)
@@ -2086,7 +2085,7 @@ int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 //             See additional notes next to declaration of the XYZZY_* variables.
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
+    local int DriveNum <hidden=true> = parentof(this).DriveNum; // keep track of which drive this belongs to
 
     // Define all file entries
     XYZZY_Start = FTell();
@@ -2265,7 +2264,7 @@ string ReadNTFS_FILE_FLAGS( NTFS_FILE_FLAGS &flags )
 // NTFS File Name Information
 typedef struct
 {
-    local int64 start = FTell();
+    local int64 start <hidden=true> = FTell();
     BitfieldDisablePadding();
     UQUAD       FileRecordNumber : 48;
     UQUAD       SequenceNumber : 16;    
@@ -2330,7 +2329,7 @@ typedef struct
 // NTFS Index Entry
 typedef struct
 {
-    local int64 start = FTell();
+    local int64 start <hidden=true> = FTell();
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
         UBYTE   Stream[header.StreamLength];
@@ -2347,7 +2346,7 @@ typedef struct
 // NTFS File Name Index Entry
 typedef struct
 {
-    local int64 start = FTell();
+    local int64 start <hidden=true> = FTell();
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
         NTFS_ATTR_FILE_NAME fileNameAttr;
@@ -2364,12 +2363,12 @@ typedef struct
 // Display file name and subnode beside index entry
 wstring ReadNTFS_INDEX_FILE_NAME_ENTRY( NTFS_INDEX_FILE_NAME_ENTRY &fn )
 {
-    string s;
+    local string s <hidden=true>;
     if( exists( fn.fileNameAttr ) )
         s = fn.fileNameAttr.FileName;
     if( fn.header.HasSubNode )
     {
-        string subnode;
+        local string subnode <hidden=true>;
         SPrintf( subnode, " (Subnode %d)", fn.SubNode );
         s += subnode;
     }    
@@ -2397,7 +2396,7 @@ typedef struct ( UQUAD maxPos )
 // NTFS File Index
 typedef struct
 {
-    local int64 startPos = FTell();
+    local int64 startPos <hidden=true> = FTell();
 
     struct NTFS_INDEX_HEADER {
         UCHAR   Magic[4];
@@ -2418,7 +2417,7 @@ typedef struct
     if( header.Magic == "INDX" )
     {
         FSeek( startPos + 0x18 + header.IndexEntriesOffset );
-        local int i;
+        local int i <hidden=true>;
         do
         {
             NTFS_INDEX_FILE_NAME_ENTRY entry;
@@ -2452,11 +2451,11 @@ typedef struct (int size, UQUAD lengthLeft)
 //  in the file. 
 typedef struct
 {
-    local int i;
-    local UQUAD vcn = 0;
-    local UQUAD RunLength;
-    local int DriveNum = parentof(parentof(parentof(this))).DriveNum;
-    local UQUAD LengthLeft = parentof(this).header.AttributeSize;
+    local int i <hidden=true>;
+    local UQUAD vcn <hidden=true> = 0;
+    local UQUAD RunLength <hidden=true>;
+    local int DriveNum <hidden=true> = parentof(parentof(parentof(this))).DriveNum;
+    local UQUAD LengthLeft <hidden=true> = parentof(this).header.AttributeSize;
     while( exists( parentof(this).runList.run[i] ) )
     {
         // Create the block of data using the run list
@@ -2472,7 +2471,7 @@ typedef struct
 // NTFS Attribute
 typedef struct
 {
-    local int64 start = FTell();
+    local int64 start <hidden=true> = FTell();
     struct NTFS_ATTRIBUTE_HEADER
     {
         NTFS_ATTR_TYPE Type;
@@ -2545,7 +2544,7 @@ typedef struct
         if( (header.Type == INDEX_ALLOCATION) && (parentof(this).header.IsDirectory) )
         {
             // Stores an index (btree) of file names
-            local int i;
+            local int i <hidden=true>;
             for( i = 0; i <= header.LastVCN; i++ )
             {
                 FSeek( NTFS_LCNToAddress( NTFS_VCNToLCN( runList, i ), parentof(parentof(this)).DriveNum ) );
@@ -2599,8 +2598,8 @@ local const UQUAD NTFS_SignExtend[8] <hidden=true> = {
 // number of runs and check which run the vcn belongs to.
 UQUAD NTFS_VCNToLCN( NTFS_RUN_LIST &runlist, UQUAD vcn )
 {
-    local int i;
-    local UQUAD offset = 0;
+    local int i <hidden=true>;
+    local UQUAD offset <hidden=true> = 0;
     while( exists( runlist.run[i] ) )
     {
         // Move ahead using LCNOffset
@@ -2632,7 +2631,7 @@ UQUAD NTFS_VCNToLCN( NTFS_RUN_LIST &runlist, UQUAD vcn )
 UQUAD NTFS_ListFiles( NTFS_INDEX_FILE_NAME_ENTRY &entry, NTFS_ATTRIBUTE &allocation, int DriveNum, int level, UQUAD previousFile )
 {
     // Step into sub-node - watch for infinite recursion
-    local int k = 0;
+    local int k <hidden=true> = 0;
     if( entry.header.HasSubNode && (level < 10) )
     {
         while( 1 )
@@ -2652,9 +2651,9 @@ UQUAD NTFS_ListFiles( NTFS_INDEX_FILE_NAME_ENTRY &entry, NTFS_ATTRIBUTE &allocat
         {
             // Locate the file position - have to use the runlist of the mft
             previousFile = entry.header.FileRecordNumber;
-            local int dataAttr = NTFS_FindAttribute( drive[DriveNum].mft.mft[0], DATA );
-            local int fileRecsPerCluster = drive[DriveNum].ClusterSize / 1024;
-            local UQUAD lcn = NTFS_VCNToLCN( drive[DriveNum].mft.mft[0].attribute[dataAttr].runList, entry.header.FileRecordNumber/fileRecsPerCluster );
+            local int dataAttr <hidden=true> = NTFS_FindAttribute( drive[DriveNum].mft.mft[0], DATA );
+            local int fileRecsPerCluster <hidden=true> = drive[DriveNum].ClusterSize / 1024;
+            local UQUAD lcn  <hidden=true> = NTFS_VCNToLCN( drive[DriveNum].mft.mft[0].attribute[dataAttr].runList, entry.header.FileRecordNumber/fileRecsPerCluster );
             FSeek( NTFS_LCNToAddress( lcn, DriveNum ) + (entry.header.FileRecordNumber % fileRecsPerCluster)*1024 );
             if( ReadString( FTell(), 4 ) == "FILE" ) // make sure header is there
                 NTFS_FILE_RECORD file;
@@ -2668,7 +2667,7 @@ UQUAD NTFS_ListFiles( NTFS_INDEX_FILE_NAME_ENTRY &entry, NTFS_ATTRIBUTE &allocat
 // Find an attribute in a file record
 int NTFS_FindAttribute( NTFS_FILE_RECORD &rec, NTFS_ATTR_TYPE type )
 {
-    local int i;
+    local int i <hidden=true>;
     while( exists(rec.attribute[i]) )
     {
         if( rec.attribute[i].header.Type == type )
@@ -2681,12 +2680,12 @@ int NTFS_FindAttribute( NTFS_FILE_RECORD &rec, NTFS_ATTR_TYPE type )
 // NTFS Directory
 typedef struct
 {
-    local int   DriveNum      = parentof(parentof(this)).DriveNum; // keep track of which drive this belongs to
-    local int   dirRoot       = NTFS_FindAttribute( parentof(this), INDEX_ROOT );
-    local int   dirAllocation = NTFS_FindAttribute( parentof(this), INDEX_ALLOCATION );
-    local UQUAD previousFile = 0xFFFFFFFFFFFFFFFFL;
-    local int   i = 0;
-    local int64 start = FTell();
+    local int   DriveNum <hidden=true>      = parentof(parentof(this)).DriveNum; // keep track of which drive this belongs to
+    local int   dirRoot <hidden=true>       = NTFS_FindAttribute( parentof(this), INDEX_ROOT );
+    local int   dirAllocation <hidden=true> = NTFS_FindAttribute( parentof(this), INDEX_ALLOCATION );
+    local UQUAD previousFile <hidden=true>  = 0xFFFFFFFFFFFFFFFFL;
+    local int   i <hidden=true> = 0;
+    local int64 start <hidden=true> = FTell();
     while( 1 )
     {
         // Iterate through the b-tree index and create the list of files
@@ -2704,7 +2703,7 @@ typedef struct
 // NTFS File Record
 typedef struct 
 {
-    local int64 start = FTell();
+    local int64 start <hidden=true> = FTell();
 
     // Header info
     struct FILE_RECORD_HEADER_NTFS
@@ -2741,7 +2740,7 @@ typedef struct
         UBYTE padding[ 1024 - (FTell() - start) ];
 
     // Check if this is a directory
-    local int attrRoot = NTFS_FindAttribute( this, INDEX_ROOT );
+    local int attrRoot <hidden=true> = NTFS_FindAttribute( this, INDEX_ROOT );
     if( (attrRoot >= 0) && (header.IsDirectory) )
     {
         FSeek( start );
@@ -2756,8 +2755,8 @@ typedef struct
 // Display file name beside the file record
 wstring ReadNTFS_FILE_RECORD( NTFS_FILE_RECORD &fr )
 {
-    string name;
-    local int attrNum = NTFS_FindAttribute( fr, FILE_NAME );
+    local string name <hidden=true>;
+    local int attrNum <hidden=true> = NTFS_FindAttribute( fr, FILE_NAME );
     if( attrNum != -1 )
     {
         // Skip short DOS names
@@ -2767,8 +2766,8 @@ wstring ReadNTFS_FILE_RECORD( NTFS_FILE_RECORD &fr )
         name = fr.attribute[attrNum].fileName.FileName;
 
         // Check for hidden, system
-        local int hidden = fr.attribute[attrNum].fileName.Flags.Hidden;
-        local int system = fr.attribute[attrNum].fileName.Flags.System;
+        local int hidden <hidden=true> = fr.attribute[attrNum].fileName.Flags.Hidden;
+        local int system <hidden=true> = fr.attribute[attrNum].fileName.Flags.System;
         if( hidden || system )
         {
             name += " (";
@@ -2797,7 +2796,7 @@ wstring ReadNTFS_FILE_RECORD( NTFS_FILE_RECORD &fr )
 // NTFS Master File Table (MFT)
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
+    local int DriveNum <hidden=true> = parentof(this).DriveNum; // keep track of which drive this belongs to
     NTFS_FILE_RECORD mft[16] <optimize=false>;
 } NTFS_MASTER_FILE_TABLE <read=ReadNTFS_MASTER_FILE_TABLE>;
 
@@ -2806,7 +2805,7 @@ string ReadNTFS_MASTER_FILE_TABLE( NTFS_MASTER_FILE_TABLE &mft )
 {
     if( exists( mft.mft[3] ) )
     {
-        local int volAttr = NTFS_FindAttribute( mft.mft[3], VOLUME_NAME );
+        local int volAttr <hidden=true> = NTFS_FindAttribute( mft.mft[3], VOLUME_NAME );
         if( volAttr != -1 )
             return mft.mft[3].attribute[ volAttr ].volumeName.VolumeName;
     }
@@ -3111,10 +3110,10 @@ struct HFS_File;
 //  files with the given parent id
 void HFS_ListFilesInNode( HFS_BTNode &node, uint folderID )
 {
-    local int i, type;
-    local int64 pos;
-    local uint  nextID;
-    local int   count = node.descriptor.numRecords;
+    local int i <hidden=true>, type <hidden=true>;
+    local int64 pos <hidden=true>;
+    local uint  nextID <hidden=true>;
+    local int   count <hidden=true> = node.descriptor.numRecords;
     if( node.descriptor.kind == kBTIndexNode )
     {
         // Traverse down the index nodes looking for the proper parent id
@@ -3165,8 +3164,8 @@ void HFS_ListFiles( int DriveNum, uint folderID )
 // HFS List of files and subfolders inside a folder
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum;
-    local int64 pos = FTell();
+    local int DriveNum <hidden=true> = parentof(this).DriveNum;
+    local int64 pos <hidden=true> = FTell();
     BigEndian();
     HFS_ListFiles( parentof(this).DriveNum, parentof(this).folderInfo.folderID );
     FSeek( pos+4 );
@@ -3176,12 +3175,12 @@ typedef struct
 // HFS - Folder stored in the catalog
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum;
+    local int DriveNum <hidden=true> = parentof(this).DriveNum;
     HFS_CatalogKey      key;
     HFS_CatalogFolder   folderInfo;
 
     // Store link to all files in this folder
-    local int64 pos = FTell();
+    local int64 pos <hidden=true> = FTell();
     HFS_FolderList  subDir;
     FSeek( pos );
 } HFS_Folder <read=ReadHFSFolder>;
@@ -3228,11 +3227,11 @@ typedef struct (int size, uint64 lengthLeft)
 // HFS File Data - list as a series of blocks
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum;
-    local int LengthLeft = parentof(this).fileInfo.dataFork.logicalSize;
-    local int blockSize = drive[DriveNum].header.blockSize;
-    local int i, size;
-    local int64 pos = FTell();
+    local int DriveNum <hidden=true> = parentof(this).DriveNum;
+    local int LengthLeft <hidden=true> = parentof(this).fileInfo.dataFork.logicalSize;
+    local int blockSize <hidden=true> = drive[DriveNum].header.blockSize;
+    local int i <hidden=true>, size <hidden=true>;
+    local int64 pos <hidden=true> = FTell();
     BigEndian();
     for( i = 0; i < 8; i++ )
     {
@@ -3258,14 +3257,14 @@ typedef struct
 // HFS - File stored in the catalog
 typedef struct
 {
-    local int DriveNum = parentof(this).DriveNum;
+    local int DriveNum <hidden=true> = parentof(this).DriveNum;
     HFS_CatalogKey          key;
     HFS_CatalogFile         fileInfo;
 
     // Store the file data is a set of blocks
     if( fileInfo.dataFork.logicalSize > 0 )
     {
-        local int64 pos = FTell();
+        local int64 pos <hidden=true> = FTell();
         FSeek( HFS_BlockToAddress( DriveNum, fileInfo.dataFork.extents[0].startBlock ) );
         HFS_FileData  fileData;
         FSeek( pos );
@@ -3281,12 +3280,12 @@ wstring ReadHFSFile( HFS_File &rec )
 // HFS - Index record in the catalog
 typedef struct 
 {
-    local int DriveNum = parentof(this).DriveNum;
+    local int DriveNum <hidden=true> = parentof(this).DriveNum;
     HFS_CatalogKey      key;
     UInt32              link;
 
     // Store on-demand child node
-    local int64 pos = FTell();
+    local int64 pos <hidden=true> = FTell();
     if( HFS_JumpToCatalogNode( DriveNum, link ) )
         HFS_BTNode          childNode;
     FSeek( pos );
@@ -3350,15 +3349,15 @@ struct HFS_BTHeaderNode
 // HFS Node of the btree
 typedef struct 
 {
-    local int j;
-    local int64 startPos = FTell();
-    local SInt16 recordType;
+    local int j <hidden=true>;
+    local int64 startPos <hidden=true> = FTell();
+    local SInt16 recordType <hidden=true>;
 
     // Node descriptor
     BigEndian();
     HFS_BTNodeDescriptor  descriptor;
-    local int DriveNum = parentof(parentof(descriptor)).DriveNum;
-    local int NodeSize = drive[DriveNum].btree.headerNode.header.nodeSize;
+    local int DriveNum <hidden=true> = parentof(parentof(descriptor)).DriveNum;
+    local int NodeSize <hidden=true> = drive[DriveNum].btree.headerNode.header.nodeSize;
 
     // Create each record of the node
     for( j = 0; j < descriptor.numRecords; j++ )
@@ -3386,7 +3385,7 @@ typedef struct
 int64 HFS_LocalToDriveBlock( HFS_ForkData &fork, int64 localBlock )
 {
     // Search through the extents to find where this block is
-    local int   i;
+    local int   i <hidden=true>;
     for( i = 0; i < 8; i++ )
     {
         if( localBlock < fork.extents[i].blockCount )
@@ -3402,11 +3401,11 @@ int64 HFS_LocalToDriveBlock( HFS_ForkData &fork, int64 localBlock )
 // HFS - Function to seek to a particular catalog node - return true if successful
 int HFS_JumpToCatalogNode( int DriveNum, int NodeNum )
 {
-    local int blockSize = drive[DriveNum].header.blockSize;
-    local int nodeSize  = drive[DriveNum].btree.headerNode.header.nodeSize;
-    local int64 pos   = (int64)nodeSize * NodeNum;
-    local int64 localBlock = pos / blockSize;
-    local int64 driveBlock = HFS_LocalToDriveBlock( drive[DriveNum].header.catalogFile, localBlock );
+    local int blockSize <hidden=true>    = drive[DriveNum].header.blockSize;
+    local int nodeSize <hidden=true>     = drive[DriveNum].btree.headerNode.header.nodeSize;
+    local int64 pos <hidden=true>        = (int64)nodeSize * NodeNum;
+    local int64 localBlock <hidden=true> = pos / blockSize;
+    local int64 driveBlock <hidden=true> = HFS_LocalToDriveBlock( drive[DriveNum].header.catalogFile, localBlock );
     if( driveBlock < 0 )
         return false;
     FSeek( drive[DriveNum].DriveStart + driveBlock*blockSize );
@@ -3422,8 +3421,8 @@ int64 HFS_BlockToAddress( int DriveNum, int64 block )
 // HFS Catalog - stored as a btree
 typedef struct
 {
-    local int   DriveNum = parentof(this).DriveNum; // keep track of which drive this belongs to
-    local int64 startPos = FTell();
+    local int   DriveNum <hidden=true> = parentof(this).DriveNum; // keep track of which drive this belongs to
+    local int64 startPos <hidden=true> = FTell();
 
     // Define the header node
     HFS_BTHeaderNode headerNode;
@@ -3487,8 +3486,8 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
 
     // detect the file system type, using the current position
     // as the first sector of the volume (e.g., boot sector)
-    local FILE_SYSTEM_TYPE result = FILE_SYSTEM_TYPE_NONE;
-    local int64 startPos = FTell();
+    local FILE_SYSTEM_TYPE result <hidden=true> = FILE_SYSTEM_TYPE_NONE;
+    local int64 startPos <hidden=true> = FTell();
    
     //Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
 
@@ -3566,7 +3565,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
 //       to allow callers to indicate 'unknown/undefined' by passing -1.
 FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
 {
-    local FILE_SYSTEM_TYPE preferredType = FILE_SYSTEM_TYPE_NONE;
+    local FILE_SYSTEM_TYPE preferredType <hidden=true> = FILE_SYSTEM_TYPE_NONE;
 
     switch (SystemID) {
         // 05h, 0Fh, (15h?,) and C5h are extended partition, handled above
@@ -3654,7 +3653,7 @@ FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
 // happen if a drive is listed in the MBR and the EFI table
 int DriveAlreadyExists( int64 pos )
 {
-    local int i;
+    local int i <hidden=true>;
     for( i = 0; i < NumDrives; i++ )
     {
         if( startof(drive[i]) == pos )
@@ -3671,7 +3670,7 @@ int AutoDetectDrive( int SystemID )
     local int    i <hidden=true>;
     local int64  startPos <hidden=true> = FTell();
     local string SystemIDAsString = ReadPARTITION_SYSTEMID(SystemID);
-    local int64  newStart;
+    local int64  newStart <hidden=true>;
 
     Printf("ADD() Enter: startPos = %08x, SystemID == %s\r\n", startPos, SystemIDAsString);
 
@@ -3753,8 +3752,8 @@ int AutoDetectDrive( int SystemID )
         Printf("ADD() Exit: startPos = %08x, EFI partitions\r\n", startPos);
         return true;
     }
-    local FILE_SYSTEM_TYPE preferredType = PreferredFileSystemTypeFromPartitionSystemID(SystemID);
-    local FILE_SYSTEM_TYPE detected = FILE_SYSTEM_TYPE_NONE;
+    local FILE_SYSTEM_TYPE preferredType <hidden=true> = PreferredFileSystemTypeFromPartitionSystemID(SystemID);
+    local FILE_SYSTEM_TYPE detected <hidden=true> = FILE_SYSTEM_TYPE_NONE;
 
     if (preferredType != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
@@ -3831,8 +3830,8 @@ if (!AutoDetectDriveResult)
     // Auto detect the MBR
     // BUGBUG-4kn -- If MBR, how to detect 4k sector size?
     //           Why?  how else to calculate proper offset for partition?
-    local unsigned short mbr_boot_ok=0;
-    local unsigned short i;
+    local unsigned short mbr_boot_ok <hidden=true> = 0;
+    local unsigned short i <hidden=true>;
     local PARTITION_SYSTEMID SystemID[4];
     local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
     local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
