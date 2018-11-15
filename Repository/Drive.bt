@@ -33,7 +33,7 @@
 //  properly handle the Fixup values and if the Fixup
 //  value hits critical information the template may stop.
 //------------------------------------------------
-LittleEndian(); 
+LittleEndian();
 local int NumDrives = 0;
 
 local const DWORD DefaultSectorSize <hidden=true> = 512;
@@ -633,7 +633,7 @@ typedef struct EXFAT_BOOTSECTOR {
     uint32  SectorsPerFat                 <format=hex>; // sector count for each copy of FAT    min:  (ClusterCount+2)*4 / SectorSize, ***ROUNDED UP***   max: (ClusterHeapOffset - FatOffset) / NumberOfFatTables
     uint32  DataAreaSectorOffset          <format=hex>; // volume sector offset to first data cluster
     uint32  CountOfDataClusters           <format=hex>; // stored directly in the BPB, at last!
-    uint32  RootCluster                   <format=hex>; // first cluster, then follow FAT chain...
+    uint32  RootClusterIndex              <format=hex>; // first cluster, then follow FAT chain...
     uint32  VolumeSerialNumber            <format=hex>; // all values are valid
     byte    FileSystemRevisionMinor       <format=hex>;
     byte    FileSystemRevisionMajor       <format=hex>;
@@ -728,6 +728,18 @@ typedef struct {
     local DWORD i <hidden=true>;
     local boolean InternallyValid = 0; // used to detect validity
 
+    // BUGBUG -- typeof 'this' pointer in struct declaration cannot be known
+    //           at location of structure definition... it depends on whether
+    //           the struct was instantiated as a single element, or as an array(!).
+    //           Sent bug report to Sweetscape, currently considered part of language design.
+    //           Requested consideration of how to solve problem of writing a single struct
+    //           that can be instantiated as both single instance and array, while using 'this'.
+    //
+    // in other words, sizeof(this) differs (even for fixed-length structure) based on whether
+    // the _CALLER_ instantiates the variable as an array or as a single item.  <grrrr....>
+    // No known workarounds at this time.  I use the 'this' variable quite a bit here, so hopefully
+    // a resolution will be found...
+
     EXFAT_BOOTSECTOR Boot;
     if (this.Boot.InternallyValid == 0) {
         Printf("EXFAT (0x%08x): Boot sector not internally valid\r\n", startof(this));
@@ -777,12 +789,67 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
         Printf("INVALID exFAT (%08x): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
         return false;
     }
+    // range from 0 .. 25-BytesPerSectorShift (32MB is maximum cluster size)
+    if (boot.SectorsPerClusterShift > 25-boot.BytesPerSectorShift) {
+        Printf("INVALID exFAT (%08x): SectorsPerClusterShift value (%02xh) too large for BytesPerSectorShift (%02xh)\r\n", startof(boot), boot.SectorsPerClusterShift, boot.BytesPerSectorShift);
+        return false;
+    }
+
+    // NumberOfSectors must be at least 2^20 / 2^BytesPerSectorShift == 2 ^ ( 20-BytesPerSectorShift)
+    local uint32 minimumSectors <hidden=true> = 1 << (20 - boot.BytesPerSectorShift);
     local uint32 bytesPerSector <hidden=true> = 1 < boot.BytesPerSectorShift;
-    local uint32 minimumSectors <hidden=true> = minBytes >> boot.BytesPerSectorShift;
     if (minimumSectors > boot.NumberOfSectors) {
         Printf("INVALID exFAT (%08x): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
         return false;
     }
+
+    
+    // FirstFatSectorOffset must be in range 24 .. DataAreaSectorOffset - (SectorsPerFat * NumberOfFatTables)
+    if (boot.FirstFatSectorOffset >= boot.DataAreaSectorOffset) {
+        Printf("INVALID exFAT (%08x): First FAT sector (%d) must be before Data Area offset (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, boot.DataAreaSectorOffset);
+        return false;
+    }
+    if (boot.FirstFatSectorOffset < 24) {
+        Printf("INVALID exFAT (%08x): First FAT sector (%d) smaller than minimum (24)\r\n", startof(boot), boot.FirstFatSectorOffset);
+        return false;
+    }
+    local uint32 lastPossibleSectorForFirstFat <hidden=true> = boot.DataAreaSectorOffset - (boot.SectorsPerFat * boot.NumberOfFatTables);
+    if (boot.FirstFatSectorOffset > lastPossibleSectorForFirstFat) {
+        Printf("INVALID exFAT (%08x): First FAT sector (%d) larger than last possible (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, lastPossibleSectorForFirstFat);
+        return false;
+    }
+    // verify size of FAT table
+    local uint32 entriesPerFat <hidden=true> = boot.SectorsPerFat << (boot.BytesPerSectorShift - 2);
+    if (entriesPerFat - 2 < boot.CountOfDataClusters) {
+        Printf("INVALID exFAT (%08x): Sectors per FAT (%d) can store (%d) entries, needs to store %d\r\n", startof(boot), entriesPerFat - 2, boot.CountOfDataClusters);
+        return false;
+    }
+    if (boot.RootClusterIndex < 2) {
+        Printf("INVALID exFAT (%08x): Root cluster index cannot be less than 2 (is %08xh)\r\n", startof(boot), boot.RootClusterIndex);
+        return false;
+    }
+    if (boot.RootClusterIndex > boot.CountOfDataClusters+1) {
+        Printf("INVALID exFAT (%08x): Root cluster index cannot be more than %08xh (is %08xh)\r\n", startof(boot), boot.CountOfDataClusters+1, boot.RootClusterIndex);
+        return false;
+    }
+
+    // verify NumberOfSectors against SectorsPerClusterShift, CountOfDataClusters, DataAreaSectorOffset
+    if (boot.NumberOfSectors < boot.DataAreaSectorOffset) {
+        Printf("INVALID exFAT (%08x): DataAreaSectorOffset (%08xh) must be within numberOfSectors (%08xh)\r\n", startof(boot), boot.NumberOfSectors, boot.DataAreaSectorOffset);
+        return false;
+    }
+    local uint64 maximumPossibleClusters <hidden=true> = boot.NumberOfSectors - boot.DataAreaSectorOffset;
+    maximumPossibleClusters >>= boot.SectorsPerClusterShift; // move from sectors to clusters
+    if (maximumPossibleClusters < boot.CountOfDataClusters) {
+        Printf("INVALID exFAT (%08x): Volume too small for cluster count (%08xh < %08xh)\r\n", startof(boot), maximumPossibleClusters, boot.DataAreaSectorOffset);
+        return false;
+    }
+
+    if (boot.NumberOfFatTables != 1 && boot.NumberOfFatTables != 2) {
+        Printf("INVALID exFAT (%08x): Number of fat tables must be 1 or 2 (was %d)\r\n", startof(boot), boot.NumberOfFatTables);
+        return false;
+    }
+
 
     // this is mandatory... but I wonder if it's actually filled in as required?
     Assert(boot.OemName == "EXFAT   ");
@@ -791,16 +858,16 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
 
 boolean IsValidExfatBootRegion(EXFAT_BOOT_REGION &boot_region) {
     if (!boot_region.Boot.InternallyValid) {
-        Printf("EXFAT (0x%08x):  Boot region boot sector internally invalid\r\n", startof(this));
+        Printf("INVALID EXFAT (0x%08x): Boot region boot sector internally invalid\r\n", startof(this));
         return false;
     }
     if (!boot_region.ChecksumSector.InternallyValid) {
-        Printf("EXFAT (0x%08x):  Boot region checksum sector internally invalid\r\n", startof(this));
+        Printf("INVALID EXFAT (0x%08x): Boot region checksum sector internally invalid\r\n", startof(this));
         return false;
     }
     local DWORD expectedChecksum = boot_region.ExpectedChecksum;
     if (boot_region.ChecksumSector.Checksum[0] != expectedChecksum) {
-        Printf("EXFAT (0x%08x):  Boot region checksum value (0x%08x) does not match calculated value (0x%08x)\r\n", startof(this), this.ChecksumSector.Checksum[0], expectedChecksum);
+        Printf("INVALID EXFAT (0x%08x): Boot region checksum value (0x%08x) does not match calculated value (0x%08x)\r\n", startof(this), this.ChecksumSector.Checksum[0], expectedChecksum);
         return false;
     }
     return true;
