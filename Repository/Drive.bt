@@ -682,6 +682,20 @@ typedef struct {
 string ReadEXFAT_OEM_PARAMETER_TEMPLATE(EXFAT_OEM_PARAMETER_TEMPLATE &p) {
     return ReadGUID(p.ParameterGuid);
 }
+// OEM Flash Parameters from: http://www.ntfs.com/exfat-overview.htm
+typedef struct {
+    GUID   ParameterGuid;       // {0A0C7E46-3399-4021-90C8-FA6D389C4BA2}
+    UINT32 EraseBlockSize;      // erase block size in bytes
+    UINT32 PageSize;            // ??? what page type ???
+    UINT32 NumberOfSpareBlocks; // ??? count in units of EraseBlockSize or PageSize or ???
+    UINT32 tRandomAccess_ns;    // Random access time in nanoseconds
+    UINT32 tProgram_ns;         // Program time in nanoseconds
+    UINT32 tReadCycle_ns;       // Serial Read cycle time in nanoseconds
+    UINT32 tWriteCycle_ns;      // Write cycle time in nanoseconds
+    UBYTE  Reserved[4];
+} EXFAT_OEM_FLASH_PARAMETER;
+
+
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
@@ -1000,10 +1014,9 @@ typedef struct {
     }
     FsType = FILE_SYSTEM_TYPE_EXFAT;
 
-    // TODO: Add FAT structures
-    local quad fatSectorOffsetInVolume;// <hidden=true>;
-    local quad fatByteOffsetInVolume;
-    local quad fatFilePosition;// <hidden=true>;
+    local quad fatSectorOffsetInVolume <hidden=true>;
+    local quad fatByteOffsetInVolume <hidden=true>;
+    local quad fatFilePosition <hidden=true>;
     for (i = 0; i < boot_region[idx].Boot.NumberOfFatTables; i++) {
         fatSectorOffsetInVolume = boot_region[idx].Boot.FirstFatSectorOffset;
         fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat * i;
@@ -1024,9 +1037,20 @@ typedef struct {
     // TODO: vendor-specific entry structures (2x?)
 
 /*    
-    // FAT Directory Entry
-    FSeek( RootDirEntryFilePos );
-    FAT_DIRECTORY root_dir;
+    // TODO: initial (very basic) parsing of EXFAT Directory Entries
+    FAT_DIRECTORY( startingCluster, true ); // true because it's the root directory, and thus can contain special types
+    // which would do...
+    // 1. convert starting cluster to list of extents (volume-relative sector, length)
+    // 2. looping through the extents...
+    //    a. seek(volumen-relative-sector)
+    //    b. remaining bytes = length
+    //    c. while (remaining bytes >= entry size)...
+    //       i. read-ahead to detect type of the entry
+    //       ii. create appropriate type of the entry, if known
+    //       iii. if subdirectory, recurse...
+    //       iv. remaining bytes -= entry length
+    //    d. // get next extent and goto 2a
+    // 3. No more extents, so that's all there is.
 */
 
 
