@@ -3779,6 +3779,7 @@ int AutoDetectDrive( int SystemID )
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
         Printf("ADD()      : adding EXFAT\r\n");
         EXFAT_BOOT_REGION boot_region;
+        EXFAT_BOOT_REGION boot_region;
         return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
         Printf("ADD()      : adding FAT32\r\n");
