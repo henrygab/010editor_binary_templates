@@ -670,6 +670,8 @@ typedef struct (UBYTE BytesPerSectorShift) {
     local DWORD bytesPerSector <hidden=true> = 1 << BytesPerSectorShift;
     BYTE ExtendedBootCode[bytesPerSector-4];
     DWORD ExtendedBootSignature; // must be 0xAA50_0000
+
+    local int InternallyValid = this.ExtendedBootSignature == 0xAA550000;
 } EXFAT_BOOT_EXTENDED_SECTOR;
 
 typedef struct {
@@ -742,13 +744,13 @@ typedef struct {
 
     EXFAT_BOOTSECTOR Boot;
     if (this.Boot.InternallyValid == 0) {
-        Printf("EXFAT (0x%08x): Boot sector not internally valid\r\n", startof(this));
+        // Printf("EXFAT (0x%08x): Boot sector not internally valid\r\n", startof(this));
         return;
     }
     for (i = 0; i < 8; i++) {
         EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(this.Boot.BytesPerSectorShift);
-        if (this.ExtendedBoot[i].ExtendedBootSignature != 0xAA550000) {
-            Printf("EXFAT (0x%08x):  Extended Boot Sector %d signature invalid\r\n", startof(this), i);
+        if (this.ExtendedBoot[i].InternallyValid == 0) {
+            //Printf("EXFAT (0x%08x):  Extended Boot Sector %d signature invalid\r\n", startof(this), i);
             return;
         }
     }
@@ -766,8 +768,30 @@ typedef struct {
 } EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION>;
 
 string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
-    if (!boot_region.InternallyValid) { return "Invalid"; }
-    string s = SPrintf(s, "EXFAT (s/n %08Xh)", boot_region.Boot.VolumeSerialNumber);
+    if (!boot_region.Boot.InternallyValid) {
+        return "Invalid (Boot sector)";
+    }
+    local int i <hidden=true> = 0;
+    local string s <hidden=true>;
+    while (exists(boot_region.ExtendedBoot[i])) {
+        if (!boot_region.ExtendedBoot[i].InternallyValid) {
+            SPrintf(s, "Invalid (extended boot sector %d)", i);
+            return s;
+        }
+        i++;
+    }
+    if (!boot_region.ChecksumSector.InternallyValid) {
+        return "Invalid (ChecksumSector)";
+    }
+    local DWORD expectedChecksum = boot_region.ExpectedChecksum;
+    if (boot_region.ChecksumSector.Checksum[0] != expectedChecksum) {
+        return "Invalid (wrong checksum)";
+    }
+    if (!boot_region.InternallyValid) {
+        return "Invalid";
+    }
+    // else it's valid, so just say so...
+    s = SPrintf(s, "EXFAT (s/n %08Xh)", boot_region.Boot.VolumeSerialNumber);
     return s;
 }
 
@@ -907,6 +931,108 @@ DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBY
     }
     return checksum;
 }
+
+typedef enum <ulong>
+{
+   EXFAT_MEDIA_HARD_DISK           = 0x0ffffff8,
+   EXFAT_MEDIA_FLOPPY_DISK         = 0x0ffffff0
+} EXFAT_MEDIA_TYPE <format=hex>;
+
+typedef enum <ulong>
+{
+   EXFAT_CLUSTER_INVALID0       = 0x00000000,
+   EXFAT_CLUSTER_INVALID1       = 0x00000001,
+   EXFAT_CLUSTER_BAD_CLUSTER    = 0xFFFFFFF7,
+   EXFAT_CLUSTER_END_OF_CHAIN   = 0xFFFFFFFF
+} EXFAT_CLUSTER_INFO <read=ReadEXFAT_CLUSTER_INFO>;
+
+string ReadEXFAT_CLUSTER_INFO( EXFAT_CLUSTER_INFO &info )
+{
+    string s = "";
+    if (info == EXFAT_CLUSTER_INVALID0) {
+        s += "INVALID (00000000h)";
+    } else if (info == EXFAT_CLUSTER_INVALID1) {
+        s += "INVALID (00000001h)";
+    } else if (info == EXFAT_CLUSTER_BAD_CLUSTER) {
+        s += "BAD CLUSTER (FFFFFFF7h)";
+    } else if (info == EXFAT_CLUSTER_END_OF_CHAIN) {
+        s += "END_OF_CHAIN (FFFFFFFFh)";
+    } else {
+        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
+    }
+    return s;
+}
+
+typedef struct (quad CountOfDataClusters)
+{
+    local quad start <hidden=true> = FTell();
+    EXFAT_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
+
+    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
+    FSeek( start );
+    EXFAT_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
+} EXFAT_FAT_TABLE;
+
+typedef struct {
+    local int DriveNum = NumDrives++; // keep track of the index of this drive
+    local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
+    local int i <hidden=true> = 0;
+
+    // BUGBUG -- typeof 'this' pointer in struct declaration cannot be known
+    //           at location of structure definition... it depends on whether
+    //           the struct was instantiated as a single element, or as an array(!).
+    //           Sent bug report to Sweetscape, currently considered part of language design.
+    //           Requested consideration of how to solve problem of writing a single struct
+    //           that can be instantiated as both single instance and array, while using 'this'.
+    // EXFAT_BOOT_REGION boot_region[2];
+    EXFAT_BOOT_REGION boot_region;
+    EXFAT_BOOT_REGION boot_region;
+
+    // Which boot region to use?  First one that's valid....
+    local int idx = -1;
+    if (boot_region[0].InternallyValid) {
+        idx = 0;
+    } else if (boot_region[1].InternallyValid) {
+        idx = 1;
+    } else {
+        Printf("EXFAT (0x%08x): Neither boot region internally valid, so exiting early", startof(this));
+        return;
+    }
+    FsType = FILE_SYSTEM_TYPE_EXFAT;
+
+    // TODO: Add FAT structures
+    local quad fatSectorOffsetInVolume;// <hidden=true>;
+    local quad fatByteOffsetInVolume;
+    local quad fatFilePosition;// <hidden=true>;
+    for (i = 0; i < boot_region[idx].Boot.NumberOfFatTables; i++) {
+        fatSectorOffsetInVolume = boot_region[idx].Boot.FirstFatSectorOffset;
+        fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat * i;
+        fatByteOffsetInVolume = fatSectorOffsetInVolume * boot_region[idx].Boot.BytesPerSector;
+        fatFilePosition = startof(this) + fatByteOffsetInVolume;
+        FSeek(fatFilePosition);
+        EXFAT_FAT_TABLE fat(boot_region[idx].Boot.CountOfDataClusters);
+    }
+
+    // TODO: Utility function to convert starting FAT index to list of extents (volume-relative sector, length)
+    // TODO: Parse root directory directory entry types (using extents for root directory)
+    // TODO: UpCaseTable structure
+    // TODO: AllocationBitmap structure
+    // TODO: VolumeLabel structure
+    // TODO: VolumeGuid structure
+    // TODO: padding structure
+    // TODO: File + Stream + Name[] structures
+    // TODO: vendor-specific entry structures (2x?)
+
+/*    
+    // FAT Directory Entry
+    FSeek( RootDirEntryFilePos );
+    FAT_DIRECTORY root_dir;
+*/
+
+
+} EXFAT_DRIVE;
+
+
 
 //################################################################
 // Combined FAT12/FAT16/FAT32 structures
@@ -3844,8 +3970,7 @@ int AutoDetectDrive( int SystemID )
     Assert( 0 == (detected & (detected-1)) );
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
         Printf("ADD()      : adding EXFAT\r\n");
-        EXFAT_BOOT_REGION boot_region;
-        EXFAT_BOOT_REGION boot_region;
+        EXFAT_DRIVE drive;
         return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
         Printf("ADD()      : adding FAT32\r\n");
