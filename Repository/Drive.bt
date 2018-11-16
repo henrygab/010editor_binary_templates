@@ -887,7 +887,10 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
         Printf("INVALID exFAT (%08x): Number of fat tables must be 1 or 2 (was %d)\r\n", startof(boot), boot.NumberOfFatTables);
         return false;
     }
-
+    if (boot.NumberOfFatTables == 1 && boot.VolumeFlags.ActiveFatIndex == 1) {
+        Printf("INVALID exFAT (%08x): ActiveFatIndex cannot be set when only one FAT\r\n", startof(boot));
+        return false;
+    }
 
     // this is mandatory... but I wonder if it's actually filled in as required?
     Assert(boot.OemName == "EXFAT   ");
@@ -985,12 +988,75 @@ typedef struct (quad CountOfDataClusters)
     // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
     FSeek( start );
     EXFAT_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
+    local DWORD MaximumValidCluster = CountOfDataClusters + 1;
 } EXFAT_FAT_TABLE;
+
+
+// zero-size structure warning... oh, well.
+typedef struct ( QUAD ClusterCount ) {
+    EXFAT_CLUSTER_INFO ClusterIndex;
+    local QUAD  ClusterCount; // yes, exfat defines data length as eight bytes...
+} EXFAT_EXTENT;
+
+boolean IsClusterIndexValidData(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO clusterIndex)
+{
+    return (clusterIndex >= 2 && clusterIndex <= fat_table.MaximumValidCluster);
+    if (clusterIndex == EXFAT_CLUSTER_INVALID0) return false; // invalid, but likely indicates zero-length file and coding error
+    if (clusterIndex == EXFAT_CLUSTER_INVALID1) return false; // definitely invalid
+    if (clusterIndex == EXFAT_CLUSTER_BAD_CLUSTER) return false;
+    if (clusterIndex == EXFAT_CLUSTER_END_OF_CHAIN) return false;
+    if (clusterIndex >  EXFAT_CLUSTER_BAD_CLUSTER) return false;
+    if (clusterIndex >  fat_table.MaximumValidCluster) return false;
+    return true;
+}
+quad FilePositionForClusterIndexInFatTable(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO clusterIndex)
+{
+    Assert(IsClusterIndexValidData(fat_table, clusterIndex)); // starting cluster must always be valid data, else not create this!
+    // each entry is four bytes + two entries at start...
+    local quad result = clusterIndex;
+    result *= 4;
+    result += startof(fat_table);
+    return result;
+}
+
+typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
+{
+    local quad start <hidden=true> = FTell();
+    Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
+    Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value
+
+    local DWORD TotalClusterCount = 0;
+
+    // handle easy case of contiguous file entry first (no fat entries needed)
+    if (0 != contiguousClusters) {
+        EXFAT_EXTENT extent(contiguousClusters);
+        TotalClusterCount = contiguousClusters;
+        return;
+    }
+
+    local EXFAT_CLUSTER_INFO currentClusterIndex <hidden=true> = startingClusterIndex;
+    local quad filePosition <hidden=true> = -1;
+    while (IsClusterIndexValidData(fat_table, currentClusterIndex)) {
+        // keep it simple for now... non-contiguous just gets one entry for each one
+        EXFAT_EXTENT extent(1);
+        this.TotalClusterCount += 1;
+
+        // setup for the next item...
+        // position is the current cluster index...
+        filePosition = FilePositionForClusterIndexInFatTable(fat_table, currentClusterIndex);
+        FSeek(filePosition);
+        // and then determine what that next index value is...
+        currentClusterIndex = fat_table.Cluster[currentClusterIndex];
+    }
+    // hack to avoid error that ending position was in front of starting position
+    FSeek(start+4);
+} EXFAT_CHAINED_EXTENTS;
 
 typedef struct {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
     local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
     local int i <hidden=true> = 0;
+    local quad pos <hidden=true>;
 
     // BUGBUG -- typeof 'this' pointer in struct declaration cannot be known
     //           at location of structure definition... it depends on whether
@@ -999,6 +1065,7 @@ typedef struct {
     //           Requested consideration of how to solve problem of writing a single struct
     //           that can be instantiated as both single instance and array, while using 'this'.
     // EXFAT_BOOT_REGION boot_region[2];
+    // NOTE: Workaround of <optimize=off> is equivalent to the following
     EXFAT_BOOT_REGION boot_region;
     EXFAT_BOOT_REGION boot_region;
 
@@ -1024,7 +1091,22 @@ typedef struct {
         fatFilePosition = startof(this) + fatByteOffsetInVolume;
         FSeek(fatFilePosition);
         EXFAT_FAT_TABLE fat(boot_region[idx].Boot.CountOfDataClusters);
+        if (boot_region[idx].Boot.NumberOfFatTables == 1) {
+            // HACKHACK - force array indices on the variable 'fat' to allow
+            //            code to always access as fat[0] and fat[1], while
+            //            hiding the second one from the UI when it's not 'real'.
+            FSeek(fatFilePosition);
+            EXFAT_FAT_TABLE fat(boot_region[idx].Boot.CountOfDataClusters) <hidden=true>;
+        }
     }
+
+    pos = FTell();
+    FSeek( startof(boot_region[idx].Boot.RootClusterIndex) );
+    EXFAT_CHAINED_EXTENTS root_extent(
+        fat[ boot_region[idx].Boot.VolumeFlags.ActiveFatIndex ],
+        boot_region[idx].Boot.RootClusterIndex,
+        0 // requires use of FAT Chain
+        );
 
     // TODO: Utility function to convert starting FAT index to list of extents (volume-relative sector, length)
     // TODO: Parse root directory directory entry types (using extents for root directory)
