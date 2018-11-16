@@ -1108,7 +1108,6 @@ typedef struct {
         0 // requires use of FAT Chain
         );
 
-    // TODO: Utility function to convert starting FAT index to list of extents (volume-relative sector, length)
     // TODO: Parse root directory directory entry types (using extents for root directory)
     // TODO: UpCaseTable structure
     // TODO: AllocationBitmap structure
