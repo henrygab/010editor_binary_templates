@@ -1,0 +1,174 @@
+//------------------------------------------------
+//--- 010 Editor v9.0c Binary Template
+//
+//      File: BugReport_UsingStructureAsBothInstanceAndArray.bt
+//   Authors: HenryGab
+//   Version: 1.0
+//   Purpose: To help determine if this is a bug, or intended behavior,
+//            and determine how to write a structure that can be declared
+//            as either an instance OR an array.
+//  Category: Bugs
+// File Mask: *
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+//#define Option_1
+//#define Option_2
+//#define Option_3
+//#define Option_4
+//#define Option_5
+
+// GUID - Global Unique Identifier
+typedef struct {
+    local int was_big_endian <hidden=true> = IsBigEndian();
+    LittleEndian();
+    // See Eric Lippert's 2004 post:
+    // https://blogs.msdn.microsoft.com/ericlippert/2004/05/25/you-cant-convert-data-structures-to-strings-in-vbscript-without-breaking-a-few-eggs/
+    // A GUID stored in binary format in memory is 
+    // a sixteen byte structure in the following format:
+    // DWORD - WORD - WORD - BYTE BYTE - BYTE BYTE BYTE BYTE BYTE BYTE
+    // it is printed in little-endian.
+    UINT32 Part1;
+    UINT16 Part2;
+    UINT16 Part3;
+    UBYTE Part4[2];
+    UBYTE Part5[6];
+
+#ifdef Option_4
+    local int IsValid = 0;
+#endif // Option_4
+
+    if (was_big_endian) { BigEndian(); }
+
+
+#ifdef Option_1
+    // always an instance... life remains simple
+    // everything works per user's mental model for typedef'd struct
+    // which is to say that 'this' is always an instance within this context.
+    local int IsValid = IsGuidValid(this);
+#endif // Option_1
+
+#ifdef Option_2
+    // APIs to detect how it was instantiated
+    if (IsArray(this)) {
+        local int indexOfCurrentElement = CurrentElementIndex(); // only valid in structure definition
+        local int IsValid = IsGuidValid( this[indexOfCurrentElement] ); // this will still fail?
+    } else {
+        local int IsValid = IsGuidValid( this );
+    }
+#endif // Option_2
+
+#ifdef Option_3
+    // always an array... but how to know which instance is being instantiated?
+    // also, can this add elements to the array still?
+    local int whichArrayElement = 0;
+    local int IsValid = IsGuidValid(this[whichArrayElement]);
+#endif // Option_3
+
+#ifdef Option_4
+    // always an array... but how to know which instance is being instantiated?
+    // also, can this add elements to the array still?
+    local int size  = sizeof(this);
+    local int count = sizeof(this) / 16;
+    Printf("Size == %d, Count == %d\r\n", size, count);
+
+    if (count > 1) {
+        // this is an array, so add fields to each element
+        local int i = 0;
+        local int x = this[i].IsValid;
+        while ( exists(this[i]) ) {
+            i++;
+        }
+        i -= 1; // get to last one that exists
+        Printf("Initializing index %d\r\n", i);
+        this[i].IsValid = IsGuidValid(this[i]);
+    }
+#endif // Option_4
+#ifdef Option_5
+    
+#endif // Option_5
+
+
+} GUID <read=ReadGUID, write=WriteGUID, format=hex, size=16>;
+
+#ifndef Option_5
+int IsGuidValid( GUID &g )
+{
+    if (0 == g.Part1 && 0 == g.Part2 && 0 == g.Part3 &&
+        0 == g.Part4[0] && 0 == g.Part4[1] &&
+        0 == g.Part5[0] && 0 == g.Part5[1] &&
+        0 == g.Part5[2] && 0 == g.Part5[3] &&
+        0 == g.Part5[4] && 0 == g.Part5[4]) {
+        return false;
+    }
+    return true;
+}
+#else // defined Option_5
+// this was a hope to define a function with same name, that takes an array of GUID.
+// This is broken, because it likely cannot set each element's 
+void SetGuidValidity( GUID &g )
+{
+    if (0 == g.Part1 && 0 == g.Part2 && 0 == g.Part3 &&
+        0 == g.Part4[0] && 0 == g.Part4[1] &&
+        0 == g.Part5[0] && 0 == g.Part5[1] &&
+        0 == g.Part5[2] && 0 == g.Part5[3] &&
+        0 == g.Part5[4] && 0 == g.Part5[4]) {
+        g.IsValid = false;
+    }
+    g.IsValid = true;
+}
+void SetGuidValidity( GUID [] &g ) // cannot define two functions that differ only by parameter type
+{
+    local int i = 0;
+    local int allValid = 1;
+    while (exists(g[i]) {
+        SetGuidValidity( g[i] );
+        allValid = allValid & g[i].IsValid ? 1 : 0;
+        i++;
+    }
+    return true;
+}
+#endif // Option_5
+
+
+
+string ReadGUID( GUID &g )
+{
+    local string s;
+    SPrintf( s, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+        g.Part1, g.Part2, g.Part3, g.Part4[0], g.Part4[1],
+        g.Part5[0], g.Part5[1], g.Part5[2], g.Part5[3], g.Part5[4], g.Part5[5] );
+    return s;
+}
+int IsValidGuidString( string guid_string )
+{
+    // required input format:
+    // "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"
+    // regex special characters are: ".[]^$()/\*{}?+|"
+    return RegExMatch(guid_string, "^\{\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\}$");
+}
+int WriteGUID( GUID &g, string s )
+{
+    // per docs, return 0 on success, -1 on failure
+    if (!IsValidGuidString(s)) { return -1; }
+    // copy from ReadGUID() function
+    SScanf( s, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+        g.Part1, g.Part2, g.Part3, g.Part4[0], g.Part4[1],
+        g.Part5[0], g.Part5[1], g.Part5[2], g.Part5[3], g.Part5[4], g.Part5[5] );
+    return 0;
+}
+
+GUID Alpha;
+#ifndef Option_4
+byte Wibble[16];
+GUID Beta;
+GUID Gamma;
+byte Wobble[16];
+#endif // ndef Option_4
+GUID Delta[2];
+#ifndef Option_4
+GUID Epsilon[2] <optimize=false>;
+byte Wubble[16];
+GUID Omega;
+#endif // ndef Option_4
