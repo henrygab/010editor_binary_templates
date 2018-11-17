@@ -60,7 +60,7 @@ typedef enum <uchar>
    PARTITION_SYSTEMID_FAT_16_INF32MB                 = 4,
    PARTITION_SYSTEMID_EXTENDED                       = 5,
    PARTITION_SYSTEMID_FAT_16                         = 6,
-   PARTITION_SYSTEMID_NTFS_HPFS                      = 7,
+   PARTITION_SYSTEMID_NTFS_HPFS_EXFAT                = 7,
    PARTITION_SYSTEMID_AIX                            = 8,
    PARTITION_SYSTEMID_AIX_BOOT                       = 9,
    PARTITION_SYSTEMID_OS2_BOOT_MGR                   = 10,
@@ -362,91 +362,129 @@ typedef struct
 // EFI Type - First 4 bytes of the GUID
 typedef enum <DWORD>
 {
-    EFI_UNUSED              = 0x00000000,
-    EFI_MBR                 = 0x024DEE41,
-    EFI_SYSTEM              = 0xC12A7328,
-    EFI_BIOS_BOOT           = 0x21686148,
-    EFI_IFFS                = 0xD3BFE2DE,
-    EFI_SONY_BOOT           = 0xF4019732,
-    EFI_LENOVO_BOOT         = 0xBFBFAFE7,
-    EFI_MSR                 = 0xE3C9E316,
-    EFI_BASIC_DATA          = 0xEBD0A0A2,
-    EFI_LDM_META            = 0x5808C8AA,
-    EFI_LDM                 = 0xAF9B60A0,
-    EFI_RECOVERY            = 0xDE94BBA4,
-    EFI_GPFS                = 0x37AFFC90,
-    EFI_STORAGE_SPACES      = 0xE75CAF8F,
-    EFI_HPUX_DATA           = 0x75894C1E,
-    EFI_HPUX_SERVICE        = 0xE2A1E728,
-    EFI_LINUX_DAYA          = 0x0FC63DAF,
-    EFI_LINUX_RAID          = 0xA19D880F,
-    EFI_LINUX_ROOT32        = 0x44479540,
-    EFI_LINUX_ROOT64        = 0x4F68BCE3,
-    EFI_LINUX_ROOT_ARM32    = 0x69DAD710,
-    EFI_LINUX_ROOT_ARM64    = 0xB921B045,
-    EFI_LINUX_SWAP          = 0x0657FD6D,
-    EFI_LINUX_LVM           = 0xE6D6D379,
-    EFI_LINUX_HOME          = 0x933AC7E1,
-    EFI_LINUX_SRV           = 0x3B8F8425,
-    EFI_LINUX_DM_CRYPT      = 0x7FFEC5C9,
-    EFI_LINUX_LUKS          = 0xCA7D7CCB,
-    EFI_LINUX_RESERVED      = 0x8DA63339,
-    EFI_FREEBSD_BOOT        = 0x83BD6B9D,
-    EFI_FREEBSD_DATA        = 0x516E7CB4,
-    EFI_FREEBSD_SWAP        = 0x516E7CB5,
-    EFI_FREEBSD_UFS         = 0x516E7CB6,
-    EFI_FREEBSD_VINUM       = 0x516E7CB8,
-    EFI_FREEBSD_ZFS         = 0x516E7CBA,
-    EFI_OSX_HFS             = 0x48465300,
-    EFI_OSX_UFS             = 0x55465300,
-    EFI_OSX_ZFS             = 0x6A898CC3,
-    EFI_OSX_RAID            = 0x52414944,
-    EFI_OSX_RAID_OFFLINE    = 0x52414944,
-    EFI_OSX_RECOVERY        = 0x426F6F74,
-    EFI_OSX_LABEL           = 0x4C616265,
-    EFI_OSX_TV_RECOVERY     = 0x5265636F,
-    EFI_OSX_CORE_STORAGE    = 0x53746F72,
-    EFI_SOLARIS_BOOT        = 0x6A82CB45,
-    EFI_SOLARIS_ROOT        = 0x6A85CF4D,
-    EFI_SOLARIS_SWAP        = 0x6A87C46F,
-    EFI_SOLARIS_BACKUP      = 0x6A8B642B,
-    EFI_SOLARIS_USR         = 0x6A898CC3,
-    EFI_SOLARIS_VAR         = 0x6A8EF2E9,
-    EFI_SOLARIS_HOME        = 0x6A90BA39,
-    EFI_SOLARIS_ALTERNATE   = 0x6A9283A5,
-    EFI_SOLARIS_RESERVED1   = 0x6A945A3B,
-    EFI_SOLARIS_RESERVED2   = 0x6A9630D1,
-    EFI_SOLARIS_RESERVED3   = 0x6A980767,
-    EFI_SOLARIS_RESERVED4   = 0x6A96237F,
-    EFI_SOLARIS_RESERVED5   = 0x6A8D2AC7,
-    EFI_NETBSD_SWAP         = 0x49F48D32,
-    EFI_NETBSD_FFS          = 0x49F48D5A,
-    EFI_NETBSD_LFS          = 0x49F48D82,
-    EFI_NETBSD_RAID         = 0x49F48DAA,
-    EFI_NETBSD_CONCAT       = 0x2DB519C4,
-    EFI_NETBSD_ENCRYPT      = 0x2DB519EC,
-    EFI_CHROMEOS_KERNEL     = 0xFE3A2A5D,
-    EFI_CHROMEOS_ROOTFS     = 0x3CB8E202,
-    EFI_CHROMEOS_FUTURE     = 0x2E0A753D,
-    EFI_HAIKU               = 0x42465331,
-    EFI_MIDNIGHTBSD_BOOT    = 0x85D5E45E,
-    EFI_MIDNIGHTBSD_DATA    = 0x85D5E45A,
-    EFI_MIDNIGHTBSD_SWAP    = 0x85D5E45B,
-    EFI_MIDNIGHTBSD_UFS     = 0x0394EF8B,
-    EFI_MIDNIGHTBSD_VINUM   = 0x85D5E45C,
-    EFI_MIDNIGHTBSD_ZFS     = 0x85D5E45D,
-    EFI_CEPH_JOURNAL        = 0x45B0969E,
-    EFI_CEPH_ENCRYPT        = 0x45B0969E,
-    EFI_CEPH_OSD            = 0x4FBD7E29,
-    EFI_CEPH_ENCRYPT_OSD    = 0x4FBD7E29,
-    EFI_CEPH_CREATE         = 0x89C57F98,
-    EFI_CEPH_ENCRYPT_CREATE = 0x89C57F98,
-    EFI_OPENBSD             = 0x824CC7A0,
-    EFI_QNX                 = 0xCEF5A9AD,
-    EFI_PLAN9               = 0xC91818F9,
-    EFI_VMWARE_VMKCORE      = 0x9D275380,
-    EFI_VMWARE_VMFS         = 0xAA31E02A,
-    EFI_VMWARE_RESERVED     = 0x9198EFFC,
+    EFI_UNUSED              = 0x00000000, // {00000000-0000-0000-0000-000000000000}
+    EFI_MBR                 = 0x024DEE41, // {024DEE41-33E7-11D3-9D69-0008C781F39F}
+    EFI_SYSTEM              = 0xC12A7328, // {C12A7328-F81F-11D2-BA4B-00A0C93EC93B}
+    EFI_BIOS_BOOT           = 0x21686148, // {21686148-6449-6E6F-744E-656564454649}
+    EFI_IFFS                = 0xD3BFE2DE, // {D3BFE2DE-3DAF-11DF-BA40-E3A556D89593}
+    EFI_SONY_BOOT           = 0xF4019732, // {F4019732-066E-4E12-8273-346C5641494F}
+    EFI_LENOVO_BOOT         = 0xBFBFAFE7, // {BFBFAFE7-A34F-448A-9A5B-6213EB736C22}
+    EFI_MSR                 = 0xE3C9E316, // {E3C9E316-0B5C-4DB8-817D-F92DF00215AE}
+    EFI_BASIC_DATA          = 0xEBD0A0A2, // {EBD0A0A2-B9E5-4433-87C0-68B6B72699C7}
+    EFI_BASIC_DATA2         = 0xA2A0D0EB, // {A2A0D0EB-E5B9-3344-87C0-68B6B72699C7}  // windows/linux data partition
+    EFI_LDM_META            = 0x5808C8AA, // {5808C8AA-7E8F-42E0-85D2-E1E90434CFB3}
+    EFI_LDM                 = 0xAF9B60A0, // {AF9B60A0-1431-4F62-BC68-3311714A69AD}
+    EFI_RECOVERY            = 0xDE94BBA4, // {DE94BBA4-06D1-4D40-A16A-BFD50179D6AC}
+    EFI_GPFS                = 0x37AFFC90, // {37AFFC90-EF7D-4E96-91C3-2D7AE055B174}
+    EFI_STORAGE_SPACES      = 0xE75CAF8F, // {E75CAF8F-F680-4CEE-AFA3-B001E56EFC2D}
+    EFI_HPUX_DATA           = 0x75894C1E, // {75894C1E-3AEB-11D3-B7C1-7B03A0000000}
+    EFI_HPUX_SERVICE        = 0xE2A1E728, // {E2A1E728-32E3-11D6-A682-7B03A0000000}
+    EFI_LINUX_DATA          = 0x0FC63DAF, // {0FC63DAF-8483-4772-8E79-3D69D8477DE4}
+    EFI_LINUX_RAID          = 0xA19D880F, // {A19D880F-05FC-4D3B-A006-743F0F84911E}
+    EFI_LINUX_ROOT32        = 0x44479540, // {44479540-F297-41B2-9AF7-D131D5F0458A}
+    EFI_LINUX_ROOT64        = 0x4F68BCE3, // {4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709}
+    EFI_LINUX_ROOT_ARM32    = 0x69DAD710, // {69DAD710-2CE4-4E3C-B16C-21A1D49ABED3}
+    EFI_LINUX_ROOT_ARM64    = 0xB921B045, // {B921B045-1DF0-41C3-AF44-4C6F280D3FAE}
+    EFI_LINUX_ROOT_IA64     = 0x993d8d3d, // {993d8d3d-f80e-4225-855a-9daf8ed7ea97}
+    EFI_LINUX_ROOT_VERITY32 = 0xd13c5d3b, // {d13c5d3b-b5d1-422a-b29f-9454fdc89d76}
+    EFI_LINUX_ROOT_VERITY64 = 0x2c7357ed, // {2c7357ed-ebd2-46d9-aec1-23d437ec2bf5}
+    EFI_LINUX_ROOT_VERITY_ARM32 = 0x7386cdf2, // {7386cdf2-203c-47a9-a498-f2ecce45a2d6}
+    EFI_LINUX_ROOT_VERITY_ARM64 = 0xdf3300ce, // {df3300ce-d69f-4c92-978c-9bfb0f38d820}
+    EFI_LINUX_ROOT_VERITY_IA64  = 0x86ed10d5, // {86ed10d5-b607-45bb-8957-d350f23d0571}
+    EFI_LINUX_DATA2         = 0xAF3DC60F, // {AF3DC60F-8384-7247-8E79-3D69D8477DE4}
+    EFI_LINUX_HOME          = 0x933AC7E1, // {933AC7E1-2EB4-4F13-B844-0E14E2AEF915}
+    EFI_LINUX_SRV           = 0x3B8F8425, // {3B8F8425-20E0-4F3B-907F-1A25A76F98E8}
+    EFI_LINUX_SWAP          = 0x0657FD6D, // {0657FD6D-A4AB-43C4-84E5-0933C84B4F4F}
+    EFI_LINUX_LVM           = 0xE6D6D379, // {E6D6D379-F507-44C2-A23C-238F2A3DF928}
+    EFI_LINUX_DM_CRYPT      = 0x7FFEC5C9, // {7FFEC5C9-2D00-49B7-8941-3EA10A5586B7}
+    EFI_LINUX_LUKS          = 0xCA7D7CCB, // {CA7D7CCB-63ED-4C53-861C-1742536059CC}
+    EFI_LINUX_RESERVED      = 0x8DA63339, // {8DA63339-0007-60C0-C436-083AC8230908}
+    EFI_FREEBSD_BOOT        = 0x83BD6B9D, // {83BD6B9D-7F41-11DC-BE0B-001560B84F0F}
+    EFI_FREEBSD_DATA        = 0x516E7CB4, // {516E7CB4-6ECF-11D6-8FF8-00022D09712B}
+    EFI_FREEBSD_SWAP        = 0x516E7CB5, // {516E7CB5-6ECF-11D6-8FF8-00022D09712B}
+    EFI_FREEBSD_UFS         = 0x516E7CB6, // {516E7CB6-6ECF-11D6-8FF8-00022D09712B}
+    EFI_FREEBSD_VINUM       = 0x516E7CB8, // {516E7CB8-6ECF-11D6-8FF8-00022D09712B}
+    EFI_FREEBSD_ZFS         = 0x516E7CBA, // {516E7CBA-6ECF-11D6-8FF8-00022D09712B}
+    EFI_OSX_HFS             = 0x48465300, // {48465300-0000-11AA-AA11-00306543ECAC}
+    EFI_OSX_APFS            = 0x7C3457EF, // {7C3457EF-0000-11AA-AA11-00306543ECAC}
+    EFI_OSX_UFS             = 0x55465300, // {55465300-0000-11AA-AA11-00306543ECAC}
+    EFI_OSX_ZFS             = 0x6A898CC3, // {6A898CC3-1DD2-11B2-99A6-080020736631}
+    EFI_OSX_RAID            = 0x52414944, // {52414944-0000-11AA-AA11-00306543ECAC}
+    EFI_OSX_RAID_OFFLINE    = 0x52414944, // {52414944-5F4F-11AA-AA11-00306543ECAC}
+    EFI_OSX_RECOVERY        = 0x426F6F74, // {426F6F74-0000-11AA-AA11-00306543ECAC}
+    EFI_OSX_LABEL           = 0x4C616265, // {4C616265-6C00-11AA-AA11-00306543ECAC}
+    EFI_OSX_TV_RECOVERY     = 0x5265636F, // {5265636F-7665-11AA-AA11-00306543ECAC}
+    EFI_OSX_CORE_STORAGE    = 0x53746F72, // {53746F72-6167-11AA-AA11-00306543ECAC}
+    EFI_OSX_SOFTRAID_STATUS = 0xB6FA30DA, // {B6FA30DA-92D2-4A9A-96F1-871EC6486200}
+    EFI_OSX_SOFTRAID_SCRATCH = 0x2E313465, // {2E313465-19B9-463F-8126-8A7993773801}
+    EFI_OSX_SOFTRAID_VOLUME = 0xFA709C7E, // {FA709C7E-65B1-4593-BFD5-E71D61DE9B02} 
+    EFI_OSX_SOFTRAID_CACHE  = 0xBBBA6DF5, // {BBBA6DF5-F46F-4A89-8F59-8765B2727503}
+    EFI_SOLARIS_BOOT        = 0x6A82CB45, // {6A82CB45-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_ROOT        = 0x6A85CF4D, // {6A85CF4D-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_SWAP        = 0x6A87C46F, // {6A87C46F-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_BACKUP      = 0x6A8B642B, // {6A8B642B-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_USR         = 0x6A898CC3, // {6A898CC3-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_VAR         = 0x6A8EF2E9, // {6A8EF2E9-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_HOME        = 0x6A90BA39, // {6A90BA39-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_ALTERNATE   = 0x6A9283A5, // {6A9283A5-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_RESERVED1   = 0x6A945A3B, // {6A945A3B-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_RESERVED2   = 0x6A9630D1, // {6A9630D1-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_RESERVED3   = 0x6A980767, // {6A980767-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_RESERVED4   = 0x6A96237F, // {6A96237F-1DD2-11B2-99A6-080020736631}
+    EFI_SOLARIS_RESERVED5   = 0x6A8D2AC7, // {6A8D2AC7-1DD2-11B2-99A6-080020736631}
+    EFI_NETBSD_SWAP         = 0x49F48D32, // {49F48D32-B10E-11DC-B99B-0019D1879648}
+    EFI_NETBSD_FFS          = 0x49F48D5A, // {49F48D5A-B10E-11DC-B99B-0019D1879648}
+    EFI_NETBSD_LFS          = 0x49F48D82, // {49F48D82-B10E-11DC-B99B-0019D1879648}
+    EFI_NETBSD_RAID         = 0x49F48DAA, // {49F48DAA-B10E-11DC-B99B-0019D1879648}
+    EFI_NETBSD_CONCAT       = 0x2DB519C4, // {2DB519C4-B10F-11DC-B99B-0019D1879648}
+    EFI_NETBSD_ENCRYPT      = 0x2DB519EC, // {2DB519EC-B10F-11DC-B99B-0019D1879648}
+    EFI_CHROMEOS_KERNEL     = 0xFE3A2A5D, // {FE3A2A5D-4F32-41A7-B725-ACCC3285A309}
+    EFI_CHROMEOS_ROOTFS     = 0x3CB8E202, // {3CB8E202-3B7E-47DD-8A3C-7FF2A13CFCEC}
+    EFI_CHROMEOS_FUTURE     = 0x2E0A753D, // {2E0A753D-9E48-43B0-8337-B15192CB1B5E}
+    EFI_COREOS_USR          = 0x5DFBF5F4, // {5DFBF5F4-2848-4BAC-AA5E-0D9A20B745A6}
+    EFI_COREOS_ROOT         = 0x3884DD41, // {3884DD41-8582-4404-B9A8-E9B84F2DF50E}
+    EFI_COREOS_OEM          = 0xC95DC21A, // {C95DC21A-DF0E-4340-8D7B-26CBFA9A03E0}
+    EFI_COREOS_ROOT_RAID    = 0xBE9067B9, // {BE9067B9-EA49-4F15-B4F6-F36F8C9E1818}
+    EFI_HAIKU               = 0x42465331, // {42465331-3BA3-10F1-802A-4861696B7521}
+    EFI_MIDNIGHTBSD_BOOT    = 0x85D5E45E, // {85D5E45E-237C-11E1-B4B3-E89A8F7FC3A7}
+    EFI_MIDNIGHTBSD_DATA    = 0x85D5E45A, // {85D5E45A-237C-11E1-B4B3-E89A8F7FC3A7}
+    EFI_MIDNIGHTBSD_SWAP    = 0x85D5E45B, // {85D5E45B-237C-11E1-B4B3-E89A8F7FC3A7}
+    EFI_MIDNIGHTBSD_UFS     = 0x0394EF8B, // {0394EF8B-237E-11E1-B4B3-E89A8F7FC3A7}
+    EFI_MIDNIGHTBSD_VINUM   = 0x85D5E45C, // {85D5E45C-237C-11E1-B4B3-E89A8F7FC3A7}
+    EFI_MIDNIGHTBSD_ZFS     = 0x85D5E45D, // {85D5E45D-237C-11E1-B4B3-E89A8F7FC3A7}
+    EFI_CEPH_JOURNAL        = 0x45B0969E, // {45B0969E-9B03-4F30-B4C6-B4B80CEFF106}
+    EFI_CEPH_ENCRYPT        = 0x45B0969E, // {45B0969E-9B03-4F30-B4C6-5EC00CEFF106}
+    EFI_CEPH_OSD            = 0x4FBD7E29, // {4FBD7E29-9D25-41B8-AFD0-062C0CEFF05D}
+    EFI_CEPH_ENCRYPT_OSD    = 0x4FBD7E29, // {4FBD7E29-9D25-41B8-AFD0-5EC00CEFF05D}
+    EFI_CEPH_CREATE         = 0x89C57F98, // {89C57F98-2FE5-4DC0-89C1-F3AD0CEFF2BE}
+    EFI_CEPH_ENCRYPT_CREATE = 0x89C57F98, // {89C57F98-2FE5-4DC0-89C1-5EC00CEFF2BE}
+
+    EFI_CEPH_BLOCK          = 0xCAFECAFE, // {CAFECAFE-9B03-4F30-B4C6-B4B80CEFF106}
+    EFI_CEPH_BLOCK_DB       = 0x30CD0809, // {30CD0809-C2B2-499C-8879-2D6B78529876}
+    EFI_CEPH_BLOCK_WRITE_AHEAD  = 0x5CE17FCE, // {5CE17FCE-4087-4169-B7FF-056CC58473F9}
+    EFI_CEPH_ENCRYPT_LOCKBOX    = 0xFB3AABF9, // {FB3AABF9-D25F-47CC-BF5E-721D1816496B}
+    EFI_CEPH_MULTIPATH_OSD      = 0x4FBD7E29, // {4FBD7E29-8AE0-4982-BF9D-5A8D867AF560}
+    EFI_CEPH_MULTIPATH_JOURNAL  = 0x45B0969E, // {45B0969E-8AE0-4982-BF9D-5A8D867AF560}
+    EFI_CEPH_MULTIPATH_BLOCK1   = 0xCAFECAFE, // {CAFECAFE-8AE0-4982-BF9D-5A8D867AF560}
+    EFI_CEPH_MULTIPATH_BLOCK2   = 0x7F4A666A, // {7F4A666A-16F3-47A2-8445-152EF4D03F6C}
+    EFI_CEPH_MULTIPATH_BLOCK_DB = 0xEC6D6385, // {EC6D6385-E346-45DC-BE91-DA2A7C8B3261}
+    EFI_CEPH_MULTIPATH_BLOCK_WRITE_AHEAD = 0x01B41E1B, // {01B41E1B-002A-453C-9F17-88793989FF8F}
+
+    EFI_CEPH_ENCRYPT_BLOCK                  = 0xCAFECAFE, // {CAFECAFE-9B03-4F30-B4C6-5EC00CEFF106}
+    EFI_CEPH_ENCRYPT_BLOCK_DB               = 0x93B0052D, // {93B0052D-02D9-4D8A-A43B-33A3EE4DFBC3}
+    EFI_CEPH_ENCRYPT_BLOCK_WRITE_AHEAD      = 0x306E8683, // {306E8683-4FE2-4330-B7C0-00A917C16966}
+    EFI_CEPH_ENCRYPT_LUKS_JOURNAL           = 0x45B0969E, // {45B0969E-9B03-4F30-B4C6-35865CEFF106}
+    EFI_CEPH_ENCRYPT_LUKS_BLOCK             = 0xCAFECAFE, // {CAFECAFE-9B03-4F30-B4C6-35865CEFF106}
+    EFI_CEPH_ENCRYPT_LUKS_BLOCK_DB          = 0x166418DA, // {166418DA-C469-4022-ADF4-B30AFD37F176}
+    EFI_CEPH_ENCRYPT_LUKS_BLOCK_WRITE_AHEAD = 0x86A32090, // {86A32090-3647-40B9-BBBD-38D8C573AA86}
+    EFI_CEPH_ENCRYPT_LUKS_OSD               = 0x4FBD7E29, // {4FBD7E29-9D25-41B8-AFD0-35865CEFF05D}
+
+    EFI_OPENBSD             = 0x824CC7A0, // {824CC7A0-36A8-11E3-890A-952519AD3F61}
+    EFI_QNX                 = 0xCEF5A9AD, // {CEF5A9AD-73BC-4601-89F3-CDEEEEE321A1}
+    EFI_PLAN9               = 0xC91818F9, // {C91818F9-8025-47AF-89D2-F030D7000C2C}
+    EFI_VMWARE_VMKCORE      = 0x9D275380, // {9D275380-40AD-11DB-BF97-000C2911D1B8}
+    EFI_VMWARE_VMFS         = 0xAA31E02A, // {AA31E02A-400F-11DB-9590-000C2911D1B8}
+    EFI_VMWARE_RESERVED     = 0x9198EFFC, // {9198EFFC-31C0-11DB-8F78-000C2911D1B8}
 } EFI_TYPE <format=hex>;
 
 // EFI partition entry
@@ -621,7 +659,27 @@ boolean IsValidIfsBootsector( IFS_BOOTSECTOR &boot) {
 //################################################################
 // exFAT Drives -- Much information found in US patent 8321439
 //################################################################
-typedef struct EXFAT_BOOTSECTOR {
+
+local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
+    0x00, 0x01, 0x02, 0x03,   0x04, 0x05, 0x06, 0x07, // Control codes
+    0x08, 0x09, 0x0A, 0x0B,   0x0C, 0x0D, 0x0E, 0x0F, // Control codes
+    0x10, 0x11, 0x12, 0x13,   0x14, 0x15, 0x16, 0x17, // Control codes
+    0x18, 0x19, 0x1A, 0x1B,   0x1C, 0x1D, 0x1E, 0x1F, // Control codes
+    
+    0x22, // Quotation mark
+    0x2A, // Asterisk
+    0x2F, // Forward Slash
+    0x3A, // Colon
+    
+    0x3C, // less-than symbol, greater-than symbol, question mark, backslash
+    0x3E, // Greater-than symbol
+    0x3F, // Question mark
+    0x5C, // Backslash
+    
+    0x7C  // Vertical bar
+};
+
+typedef struct {
     local boolean InternallyValid = 0;
 
     BYTE    jmp[3]                        <format=hex>;
@@ -663,7 +721,7 @@ typedef struct EXFAT_BOOTSECTOR {
         }
         InternallyValid = 1; // only set this after checked validity
     }
-};
+} EXFAT_BOOTSECTOR <optimize=false>;
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
@@ -682,6 +740,7 @@ typedef struct {
 string ReadEXFAT_OEM_PARAMETER_TEMPLATE(EXFAT_OEM_PARAMETER_TEMPLATE &p) {
     return ReadGUID(p.ParameterGuid);
 }
+
 // OEM Flash Parameters from: http://www.ntfs.com/exfat-overview.htm
 typedef struct {
     GUID   ParameterGuid;       // {0A0C7E46-3399-4021-90C8-FA6D389C4BA2}
@@ -694,8 +753,6 @@ typedef struct {
     UINT32 tWriteCycle_ns;      // Write cycle time in nanoseconds
     UBYTE  Reserved[4];
 } EXFAT_OEM_FLASH_PARAMETER;
-
-
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
@@ -744,17 +801,24 @@ typedef struct {
     local DWORD i <hidden=true>;
     local boolean InternallyValid = 0; // used to detect validity
 
-    // BUGBUG -- typeof 'this' pointer in struct declaration cannot be known
-    //           at location of structure definition... it depends on whether
-    //           the struct was instantiated as a single element, or as an array(!).
-    //           Sent bug report to Sweetscape, currently considered part of language design.
-    //           Requested consideration of how to solve problem of writing a single struct
-    //           that can be instantiated as both single instance and array, while using 'this'.
+    // NOTE -- typeof 'this' pointer in struct declaration cannot be known
+    //         at location of structure definition... it depends on whether
+    //         the struct was instantiated as a single element, or as an array(!).
     //
-    // in other words, sizeof(this) differs (even for fixed-length structure) based on whether
-    // the _CALLER_ instantiates the variable as an array or as a single item.  <grrrr....>
-    // No known workarounds at this time.  I use the 'this' variable quite a bit here, so hopefully
-    // a resolution will be found...
+    //         Per Sweetscape, this is a side-effect of how they can efficiently
+    //         support arrays with millions of items.  When instantiated as an
+    //         array, there is only one copy of the actual structure, and all
+    //         indices are presumed to have identical elements and ordering.
+    //
+    //         While the above is a neat hack, it causes both sizeof(this) and
+    //         the type assigned to (this) to differ, based on if instantiated
+    //         as an array or not.
+    //
+    //         The only way currently known to use 'this' (e.g., as parameter)
+    //         is to set attribute optimize=false.  This has the unfortunate
+    //         side effect of preventing the UI from "collapsing" the structure
+    //         when it's instantiated as an array....
+    //
 
     EXFAT_BOOTSECTOR Boot;
     if (this.Boot.InternallyValid == 0) {
@@ -779,7 +843,7 @@ typedef struct {
     
     this.InternallyValid = IsValidExfatBootRegion(this);    
 
-} EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION>;
+} EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
 
 string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
     if (!boot_region.Boot.InternallyValid) {
@@ -1050,7 +1114,101 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     }
     // hack to avoid error that ending position was in front of starting position
     FSeek(start+4);
-} EXFAT_CHAINED_EXTENTS;
+} EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
+
+typedef enum <ubyte> {
+    EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
+    // values 0x01 .. 0x7F are not valid because high bit (used flag?) is clear
+    EXFAT_DIRENTRY_TYPE_INVALID = 0x80, // apparently invalid
+
+    // UBYTE TypeCode  : 5;
+    // UBYTE Benign    : 1; // aka Optional   xx1x_xxxx
+    // UBYTE Secondary : 1; // aka Continued  x1xx_xxxx
+    // UBYTE InUse     : 1; // aka Valid      1xxx_xxxx
+    
+    // critical primary are bitmask 100x_xxxx (8x,9x)
+    EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP = 0x81, // Secondary=0, Benign=0, TypeCode = 1
+    EXFAT_DIRENTRY_TYPE_UPCASE_TABLE      = 0x82, // Secondary=0, Benign=0, TypeCode = 2
+    EXFAT_DIRENTRY_TYPE_VOLUME_LABEL      = 0x83, // Secondary=0, Benign=0, TypeCode = 3
+    // ??? What is TypeCode == 4 ???
+    EXFAT_DIRENTRY_TYPE_FILE              = 0x85, // Secondary=0, Benign=0, TypeCode = 5
+    // critical secondary are bitmask 101x_xxxx (Ax,Bx)
+    EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xA0, // Secondary=1, Benign=0, TypeCode = 0
+    EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xA1, // Secondary=1, Benign=0, TypeCode = 1
+    // benign primary are bitmask 110x_xxxx (Cx, Dx)
+    EXFAT_DIRENTRY_TYPE_VOLUME_GUID       = 0xC0, // Secondary=0, Benign=1, TypeCode = 0
+    EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING    = 0xC1, // Secondary=0, Benign=1, TypeCode = 1
+    EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL     = 0xC2, // Secondary=0, Benign=1, TypeCode = 2
+    // benign secondary are bitmask 111x_xxxx (Ex, Fx)
+    // EXFAT_DIRENTRY_x = 0xE0, // q
+
+} EXFAT_DIRENTRY_TYPE;
+
+typedef struct {
+    union {
+        EXFAT_DIRENTRY_TYPE EntryType <format=hex>;
+        struct {
+            UBYTE TypeCode : 5;
+            UBYTE Benign : 1;
+            UBYTE Secondary : 1;
+            UBYTE InUse : 1;
+        };
+    };
+    UBYTE CustomDefined[19] <format=hex>;
+    DWORD FirstClusterIndex <format=decimal>;
+    UQUAD DataLength <format=hex>;
+} EXFAT_DIRENTRY_GENERIC;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0
+    UBYTE  SecondaryEntriesCount;   // 1
+    USHORT EntrySetChecksum;        // 2..3
+    struct {
+        USHORT AllocationPossible : 1;
+        USHORT NoFatChain         : 1;
+        USHORT CustomDefined      : 14;
+    } Flags;                        // 4..5
+    UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
+    DWORD  FirstCluster;            // 20..23
+    UQUAD  DataLength;              // 24..31
+} EXFAT_DIRENTRY_GENERIC_PRIMARY;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0
+    struct {
+        UBYTE AllocationPossible  : 1;
+        USHORT NoFatChain         : 1;
+        USHORT CustomDefined      : 6; // not correct in 8321439 c30 l59
+    } Flags;                        // 1
+    UBYTE  CustomDefined[18];       // 2..19   -- flags and other stuff?
+    DWORD  FirstCluster;            // 20..23
+    UQUAD  DataLength;              // 24..31
+} EXFAT_DIRENTRY_GENERIC_SECONDARY;
+
+// TODO: EXFAT_DIRENTRY_ALLOCATION_BITMAP
+// TODO: EXFAT_DIRENTRY_UPCASE_TABLE
+// TODO: EXFAT_DIRENTRY_VOLUME_LABEL
+// TODO: EXFAT_DIRENTRY_FILE
+// TODO: EXFAT_DIRENTRY_FILE_STREAM
+// TODO: EXFAT_DIRENTRY_FILE_NAME
+// TODO: EXFAT_DIRENTRY_VOLUME_GUID
+// TODO: EXFAT_DIRENTRY_TEXFAT_PADDING
+// TODO: EXFAT_DIRENTRY_WINDOWSCE_ACL
+
+
+// TODO: EXFAT_DIRENTRY_SET, which will also validate the EntrySetChecksum
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// NEXT UP(1): Convert FILE_EXTENT to actual file data to show in the UI.
+//             fn() to change from cluster index to file-position
+//             fn() to change from file-position to cluster index
+// NEXT UP(2): Interpret the file data for root directory as sequence of directory entries
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+
+
 
 typedef struct {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
@@ -3929,11 +4087,11 @@ FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
             preferredType |= FILE_SYSTEM_TYPE_EXFAT;     
             break;
 
-        case PARTITION_SYSTEMID_NTFS_HPFS:                // 07h
+        case PARTITION_SYSTEMID_NTFS_HPFS_EXFAT:          // 07h
         case PARTITION_SYSTEMID_NTFS_HPFS_HIDDEN:         // 17h
             preferredType |= FILE_SYSTEM_TYPE_NTFS;
             preferredType |= FILE_SYSTEM_TYPE_HPFS;
-            preferredType |= FILE_SYSTEM_TYPE_EXFAT;      // These partition types are also used for exFAT
+            preferredType |= FILE_SYSTEM_TYPE_EXFAT;
             break;
 
         case PARTITION_SYSTEMID_PQSERVICE_ROUTERBOOT:     // 27h
@@ -4055,7 +4213,7 @@ int AutoDetectDrive( int SystemID )
 
     if (preferredType != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
-        local FILE_SYSTEM_TYPE detected = FileSystemRecognizer(preferredType);
+        FILE_SYSTEM_TYPE detected = FileSystemRecognizer(preferredType);
         FSeek(startPos); // reset after calling FSRec()
         if (detected == FILE_SYSTEM_TYPE_NONE) {
             Printf("ADD()      : Preferred type not detected, trying other types\r\n");
