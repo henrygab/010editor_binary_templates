@@ -1,0 +1,64 @@
+//------------------------------------------------
+//--- 010 Editor v9.0c Binary Template
+//
+//      File: OptimizedArraysAndLocalVariables.bt
+//   Authors: HenryGab
+//   Version: 0.1
+//   Purpose: Show a concrete example of how optimizations
+//            work (or don't work), to ensure help file can
+//            enlighten users (and help them avoid much
+//            pulling of hair).
+//            The goal is to EDUCATE THE USER of the software,
+//            so they can write scripts and templates that
+//            are correct.
+//  Category: Bugs
+// File Mask: *
+//  ID Bytes: 
+//   History:
+//   0.1   2018-11-21 HenryGab: Initial submission
+//------------------------------------------------
+
+typedef int boolean;
+typedef struct {
+    byte alpha[2];
+    local boolean valid = alpha[0] == alpha[1];
+} BAR <optimize=false>;
+
+BAR bar[4] <optimize=true>;
+
+local int i;
+local boolean structShowsValid;
+local boolean actuallyValid;
+for (i = 0; i<4; i++) {
+    structShowsValid = bar[i].valid;
+    actuallyValid = (bar[i].alpha[0] == bar[i].alpha[1]);
+    Printf("%d : %s  == %s\r\n", i,
+        structShowsValid ? "true" : "false",
+        actuallyValid ? "true" : "false"
+        );
+}
+
+// Given a file with the following hex data:
+//     00 01 02 03 FF FF 06 07
+//
+// The output of this template is as follows:
+//
+// 0 : false  == false
+// 1 : false  == false
+// 2 : false  == true
+// 3 : false  == false
+//
+// Because the attribute <optimize=true> can be applied at the location where the
+// structure is instantiated, even when the structure itself is defined with <optimize=false>,
+// it is IMPOSSIBLE to safely write a structure with a local variable that depends upon the
+// contents of any non-local variables.
+//
+// TODO / Workitem for Sweetscape:
+// ===============================
+// Define an keyword or attribute that means "local variable that is bound to (derived from) data of the specific instance".
+// e.g., rather than the line:
+//     local boolean valid = alpha[0] == alpha[1];
+//       something similar to one of the following:
+//     instance boolean valid = alpha[0] == alpha[1];
+//     local boolean valid <instance=true> = alpha[0] == alpha[1];
+//
