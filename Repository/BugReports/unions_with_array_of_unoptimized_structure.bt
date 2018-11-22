@@ -1,0 +1,90 @@
+//------------------------------------------------
+//--- 010 Editor v9.0c Binary Template
+//
+//      File: unions_with_array_of_unoptimized_structure.bt
+//   Authors: HenryGab
+//   Version: 0.1
+//   Purpose: Provide a minimal example of a bug
+//  Category: bug_report
+// File Mask: *
+//  ID Bytes:
+//   History:
+//   0.1   2018-11-20 HenryGab: Initial report
+//------------------------------------------------
+
+typedef struct {
+    DWORD SectorAsDwords[512/4];
+} FOO;
+
+typedef struct {
+    USHORT SectorAsUShort[512/2];
+} BAR;
+
+typedef struct {
+    UBYTE FirstBytes[512];
+    local int SomethingThatPreventsOptimization = 0;
+} BAZ <optimize=false>;
+
+typedef struct {
+    UBYTE FirstBytes[512];
+    local int SomethingThatPreventsOptimization = 0;
+} BAZ2;
+
+typedef union {
+    FOO foo;
+    BAR bar;
+    BAZ2 baz[2];
+} EXAMPLE0;
+
+typedef union {
+    FOO foo;
+    BAR bar;
+    BAZ baz[2];
+} EXAMPLE1;
+
+typedef union {
+    FOO foo;
+    BAR bar;
+    struct {
+        BAZ baz;
+        BAZ baz;
+    } baz_wrapper;
+} EXAMPLE2;
+
+typedef union {
+    FOO foo;
+    BAR bar;
+    struct {
+        BAZ baz[2];
+    } baz_wrapper;
+} EXAMPLE3;
+
+
+FSeek(0);
+EXAMPLE0 WorksWhenOptimizedAllowed;
+FSeek(0);
+EXAMPLE1 FailsDueToOptimizeFalse;
+FSeek(0);
+EXAMPLE2 WorksWithWrapper1;
+FSeek(0);
+EXAMPLE3 WorksWithWrapper2;
+
+/*
+BUG TITLE:
+Parser fails to properly parse unions with array of optimization=false elements
+
+Steps to Repro:
+1. Run this template on a file.
+
+Expected Results:
+1. WorksWhenOptimizedAllowed.baz[1] starts at byte offset 0x200
+2. FailsDueToOptimizeFalse.baz[1] starts at byte offset 0x200
+3. WorksWithWrapper1.baz_wrapper.baz[1] starts at byte offset 0x200
+4. WorksWithWrapper2.baz_wrapper.baz[1] starts at byte offset 0x200
+
+(also, the 'size' of baz should, in each case, be 0x400)
+
+Actual Results:
+The parser incorrectly causes FailsDueToOptimizeFalse.baz[1] to start at offset 0.
+The 'size' of baz is listed as 0x200.
+*/
