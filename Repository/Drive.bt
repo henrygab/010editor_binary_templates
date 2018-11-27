@@ -689,6 +689,12 @@ boolean IsValidIfsBootsector( IFS_BOOTSECTOR &boot) {
     return true;
 }
 
+typedef struct {
+    local int DriveNum = NumDrives++; // keep track of the index of this drive
+    local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_IFS;
+    IFS_BOOTSECTOR boot;
+} IFS_DRIVE <open=true, optimize=false>;
+
 //################################################################
 // exFAT Drives -- Much information found in US patent 8321439
 //################################################################
@@ -762,8 +768,7 @@ typedef struct (UBYTE BytesPerSectorShift) {
     local DWORD bytesPerSector <hidden=true> = 1 << BytesPerSectorShift;
     BYTE ExtendedBootCode[bytesPerSector-4];
     DWORD ExtendedBootSignature; // must be 0xAA50_0000
-
-    InternallyValid = this.ExtendedBootSignature == 0xAA550000;
+    InternallyValid = (ExtendedBootSignature == 0xAA550000);
 } EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
 
 typedef struct {
@@ -832,9 +837,11 @@ string ReadEXFAT_BOOT_CHECKSUM_SECTOR( EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
     return s;
 }
 
+
 typedef struct {
+    local quad start = FTell();
     local DWORD i <hidden=true>;
-    local boolean InternallyValid = 0; // used to detect validity
+    local boolean InternallyValid = 0;
     local DWORD bps_shift;
 
     EXFAT_BOOTSECTOR Boot;
@@ -854,19 +861,18 @@ typedef struct {
     EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(bps_shift); // no validation
     EXFAT_BOOT_RESERVED_SECTOR ReservedSector(bps_shift); // no validation
     EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(bps_shift);
-    
-    InternallyValid = IsValidExfatBootRegion(this);    
 
 } EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
+
 
 string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
     string result;
     local int i <hidden=true> = 0;
     local string s <hidden=true>;
+
     if (!boot_region.Boot.InternallyValid) {
         result += "Invalid (Boot sector)\r\n";
     }
-
     while (exists(boot_region.ExtendedBoot[i])) {
         if (!boot_region.ExtendedBoot[i].InternallyValid) {
             SPrintf(s, "Invalid (extended boot sector %d)\r\n", i);
@@ -884,7 +890,6 @@ string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
     if (0 == Strlen(result)) {
         result = SPrintf(s, "EXFAT (s/n %08Xh) @ %08Xh", boot_region.Boot.VolumeSerialNumber, startof(boot_region));
     }
-    // else it's valid, so just say so...
     return result;
 }
 
@@ -916,7 +921,7 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     local uint32 minimumSectors <hidden=true> = 1 << (20 - boot.BytesPerSectorShift);
     local uint32 bytesPerSector <hidden=true> = 1 < boot.BytesPerSectorShift;
     if (minimumSectors > boot.NumberOfSectors) {
-        Printf("INVALID EXFAT (%08Xh): Volume too small (Min 0x%08x sectors, but only 0x%08x indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
+        Printf("INVALID EXFAT (%08Xh): Volume too small (Min %08Xh sectors, but only %08Xh indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
         return false;
     }
 
@@ -942,23 +947,23 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
         return false;
     }
     if (boot.RootClusterIndex < 2) {
-        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be less than 2 (is %08xh)\r\n", startof(boot), boot.RootClusterIndex);
+        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be less than 2 (is %08Xh)\r\n", startof(boot), boot.RootClusterIndex);
         return false;
     }
     if (boot.RootClusterIndex > boot.CountOfDataClusters+1) {
-        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be more than %08xh (is %08xh)\r\n", startof(boot), boot.CountOfDataClusters+1, boot.RootClusterIndex);
+        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be more than %08Xh (is %08Xh)\r\n", startof(boot), boot.CountOfDataClusters+1, boot.RootClusterIndex);
         return false;
     }
 
     // verify NumberOfSectors against SectorsPerClusterShift, CountOfDataClusters, DataAreaSectorOffset
     if (boot.NumberOfSectors < boot.DataAreaSectorOffset) {
-        Printf("INVALID EXFAT (%08Xh): DataAreaSectorOffset (%08xh) must be within numberOfSectors (%08xh)\r\n", startof(boot), boot.NumberOfSectors, boot.DataAreaSectorOffset);
+        Printf("INVALID EXFAT (%08Xh): DataAreaSectorOffset (%08Xh) must be within numberOfSectors (%08Xh)\r\n", startof(boot), boot.NumberOfSectors, boot.DataAreaSectorOffset);
         return false;
     }
     local uint64 maximumPossibleClusters <hidden=true> = boot.NumberOfSectors - boot.DataAreaSectorOffset;
     maximumPossibleClusters >>= boot.SectorsPerClusterShift; // move from sectors to clusters
     if (maximumPossibleClusters < boot.CountOfDataClusters) {
-        Printf("INVALID EXFAT (%08Xh): Volume too small for cluster count (%08xh < %08xh)\r\n", startof(boot), maximumPossibleClusters, boot.DataAreaSectorOffset);
+        Printf("INVALID EXFAT (%08Xh): Volume too small for cluster count (%08Xh < %08Xh)\r\n", startof(boot), maximumPossibleClusters, boot.DataAreaSectorOffset);
         return false;
     }
 
@@ -977,6 +982,7 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
 }
 
 boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
+
     local int i;
     // Don't process multiple times
     if (boot_region.InternallyValid) {
@@ -998,22 +1004,23 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
             return false;
         }
     }
-
     if (!boot_region.ChecksumSector.InternallyValid) {
         Printf("INVALID EXFAT (%08Xh): Boot region checksum sector internally invalid\r\n", startof(boot_region));
         return false;
     }
+    
     local DWORD expected_checksum = CalculateExpectedExfatBootRegionChecksum(boot_region);
     if (boot_region.ChecksumSector.Checksum[0] != expected_checksum) {
-        Printf("INVALID EXFAT (%08Xh): Boot region checksum value (%08Xh) does not match calculated value (%08Xh)\r\n", startof(this), boot_region.ChecksumSector.Checksum[0], expected_checksum);
+        Printf("INVALID EXFAT (%08Xh): Boot region checksum value (%08Xh) does not match calculated value (%08Xh)\r\n", startof(boot_region), boot_region.ChecksumSector.Checksum[0], expected_checksum);
         return false;
     }
     Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
+    boot_region.InternallyValid = 1;
     return true;
 }
 
 
-DWORD CalculateExpectedExfatBootRegionChecksum(EXFAT_BOOT_REGION &boot_region) {
+DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_region) {
     return
         CalculateExpectedExfatBootRegionChecksumUsingStartPosition(
             startof(boot_region),
@@ -1080,20 +1087,19 @@ string ReadEXFAT_CLUSTER_INFO( EXFAT_CLUSTER_INFO &info )
 
 typedef struct (quad CountOfDataClusters)
 {
-    local quad start <hidden=true> = FTell();
-    EXFAT_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
-
     // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
-    FSeek( start );
+    EXFAT_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
+    FSkip( -4 );
+
     EXFAT_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
-    local DWORD MaximumValidCluster = CountOfDataClusters + 1;
+    local DWORD MaximumValidCluster = CountOfDataClusters + 1; // this is not dependent upon instance data, so OK to optimize
 } EXFAT_FAT_TABLE;
 
 
 // zero-size structure warning... oh, well.
 typedef struct ( QUAD ClusterCount ) {
     EXFAT_CLUSTER_INFO ClusterIndex;
-    local QUAD  ClusterCount; // yes, exfat defines data length as eight bytes...
+    local QUAD  CountOfClusters = ClusterCount; // yes, exfat defines data length as eight bytes...  Not dependent on instance data, so OK to optimize
 } EXFAT_EXTENT;
 
 boolean IsClusterIndexValidData(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO clusterIndex)
@@ -1116,6 +1122,12 @@ quad FilePositionForClusterIndexInFatTable(EXFAT_FAT_TABLE &fat_table, EXFAT_CLU
     result += startof(fat_table);
     return result;
 }
+// Move the read position to the start of the given cluster
+//void EXFAT_JumpToClusterIndex( DWORD clusterIndex, int DriveNum )
+//{
+//    FSeek( drive[DriveNum].DataAreaFilePos + 
+//        (cluster-2)*drive[DriveNum].ClusterSize );
+//}
 
 typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
 {
@@ -1199,7 +1211,7 @@ typedef struct {
     USHORT EntrySetChecksum;        // 2..3
     USHORT AllocationPossible : 1;
     USHORT NoFatChain         : 1;
-    // USHORT CustomDefined      : 14;
+    USHORT _                  : 14;
     UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
@@ -1209,21 +1221,102 @@ typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
     UBYTE AllocationPossible  : 1;
     USHORT NoFatChain         : 1;
-    // USHORT CustomDefined      : 6; // not correct in 8321439 c30 l59
+    USHORT _                  : 6;
     UBYTE  CustomDefined[18];       // 2..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
 } EXFAT_DIRENTRY_GENERIC_SECONDARY;
 
-// TODO: EXFAT_DIRENTRY_ALLOCATION_BITMAP
-// TODO: EXFAT_DIRENTRY_UPCASE_TABLE
-// TODO: EXFAT_DIRENTRY_VOLUME_LABEL
-// TODO: EXFAT_DIRENTRY_FILE
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP (0x81)
+    UBYTE  BitmapIndex : 1;
+    UBYTE  _ : 7;    
+    UBYTE  Reserved[18];            // 6..19   -- flags and other stuff?
+    DWORD  FirstCluster;            // 20..23
+    UQUAD  DataLength;              // 24..31
+} EXFAT_DIRENTRY_ALLOCATION_BITMAP;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE (0x82)
+    UBYTE  _[3];                    // 1..3
+    DWORD  TableChecksum;           // 4..7
+    UBYTE  __[12];                  // 8..19
+    DWORD  FirstCluster;            // 20..23
+    UQUAD  DataLength;              // 24..31
+} EXFAT_DIRENTRY_UPCASE_TABLE;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL (0x83)
+    UBYTE    CharacterCount;        // 1
+    wchar_t  Label[11];             // 2..23
+    UBYTE    Reserved[8];           // 24..31 -- normally DataLength
+} EXFAT_DIRENTRY_VOLUME_LABEL;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_FILE (0x85)
+    UBYTE  SecondaryEntriesCount;   // 1
+    USHORT EntrySetChecksum;        // 2..3
+    struct {
+        USHORT ReadOnly  : 1;
+        USHORT Hidden    : 1;
+        USHORT System    : 1;
+        USHORT Reserved1 : 1;
+        USHORT Directory : 1;
+        USHORT Archive   : 1;
+        USHORT Reserved2 : 10;
+    } Attributes;
+    BYTE Reserved1[2];              // 6..7
+    DOSDATE CreatedDate;            // 8..9
+    DOSTIME CreatedTime;            // 10..11
+    DOSDATE ModifiedDate;           // 12..13
+    DOSTIME ModifiedTime;           // 14..15
+    DOSDATE AccessedDate;           // 16..17
+    DOSTIME AccessedTime;           // 18..19
+    UBYTE   Created10msIncrement;   // 20
+    UBYTE   Modified10msIncrement;  // 21
+    UBYTE   Accessed10msIncrement;  // 22 -- BUGBUG -- Is this right?
+    UBYTE   _;                      // 23
+    UBYTE   Reserved2[8];           // 24..31
+} EXFAT_DIRENTRY_FILE;
+
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;  // 0
+    UBYTE  SecondaryEntriesCount;   // 1
+    USHORT EntrySetChecksum;        // 2..3
+    USHORT AllocationPossible : 1;
+    USHORT NoFatChain         : 1;
+    USHORT CustomDefined      : 14;
+    UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
+    DWORD  FirstCluster;            // 20..23
+    UQUAD  DataLength;              // 24..31
+} EXFAT_DIRENTRY_GENERIC_PRIMARYx;
+    
+    
 // TODO: EXFAT_DIRENTRY_FILE_STREAM
+//    == EXFAT_DIRENTRY_TYPE_FILE_STREAM (0xA0)
+
+
 // TODO: EXFAT_DIRENTRY_FILE_NAME
+//    == EXFAT_DIRENTRY_TYPE_FILE_NAME (0xA1)
+
 // TODO: EXFAT_DIRENTRY_VOLUME_GUID
+typedef struct {
+    EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_GUID (0xC0)
+    UBYTE SecondaryEntriesCount;     // 1
+    USHORT SetChecksum;              // 2..3
+    USHORT AllocationPossible : 1;
+    USHORT NoFatChain         : 1;
+    USHORT Reserved1          : 14;
+    GUID   VolumeGuid;               // 6..21
+    BYTE   Reserved2[10];            // 22..31
+} EXFAT_DIRENTRY_VOLUME_GUID;
+
 // TODO: EXFAT_DIRENTRY_TEXFAT_PADDING
+//    == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING (0xC1)
+
 // TODO: EXFAT_DIRENTRY_WINDOWSCE_ACL
+//    == EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL (0xC2)
+
 
 
 // TODO: EXFAT_DIRENTRY_SET, which will also validate the EntrySetChecksum
@@ -1248,13 +1341,13 @@ typedef struct {
 
     EXFAT_BOOT_REGION boot_region[2];
 
-    // Which boot region to use?  First one that's valid....
-    local int idx = -1;
     for (i = 0; i < 2; i++) {
         Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
         boot_region[i].InternallyValid = IsValidExfatBootRegion( boot_region[i] );
     }
 
+    // Which boot region to use?  First one that's valid....
+    local int idx = -1;
     if (boot_region[0].InternallyValid) {
         idx = 0;
     } else if (boot_region[1].InternallyValid) {
@@ -1523,6 +1616,7 @@ typedef struct (DWORD CountOfDataClusters)
 
     local quad startFilePosition <hidden=true> = FTell();
     local DWORD count_of_data_clusters = CountOfDataClusters;
+
     // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
     // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
     // which will allow safely restoring the prior bitfield padding state.
@@ -1577,14 +1671,14 @@ typedef struct (quad CountOfDataClusters)
     FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
     FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
 
-    // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
+    // Then seek back, so FAT array indices correspond to stored values in the FAT chain
     FSkip( -4 );
     FAT16_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
 } FAT16_FAT_TABLE;
 
 typedef struct (DWORD CountOfDataClusters)
 {
-    local DWORD count_of_data_clusters = CountOfDataClusters; // not instance-dependent, so OK to optimize
+    local DWORD count_of_data_clusters = CountOfDataClusters;
 
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
     // Therefore, every usage will require the bitfield annotation (' : 28').
@@ -1599,15 +1693,14 @@ typedef struct (DWORD CountOfDataClusters)
     // A loop such as below has the best chance of a future version
     // collapsing the displayed array.
     FSkip( -8 );
-    local DWORD i <hidden=true>;
-    for (i = 0; i < CountOfDataClusters+2; i++) {
+    local DWORD i <hidden=true> = CountOfDataClusters+2;
+    while (i > 0) {
         // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
         // Therefore, every usage will require the bitfield annotation (' : 28').
-        // And... cannot declare this as an (optimized) array, because of the bitfield annotation
         FAT32_CLUSTER_INFO Cluster : 28;
         i -= 1;
     }
-} FAT32_FAT_TABLE <read=ReadFAT32_FAT_TABLE>;
+} FAT32_FAT_TABLE <read=ReadFAT32_FAT_TABLE, optimize=false>;
 
 string ReadFAT32_FAT_TABLE( FAT32_FAT_TABLE &fat_table )
 {
@@ -1729,7 +1822,8 @@ DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
 DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
 {
     if (boot.BytesPerSector == 0) return 0;
-    if (!IsExactlyOneBitSet(boot.BytesPerSector)) return 0;
+    if (!IsExactlyOneBitSet(boot.BytesPerSector)) return false;
+
     if (boot.BytesPerSector != 512) { // TODO: Fix 4k native sectors to show correct file data
         Printf("WARNING: Potentially valid FAT file system at 0x%x.\r\n", startof(boot));
         Printf("         Shows non-512 bytes per sector (0x%x)\r\n", boot.BytesPerSector);
@@ -1872,7 +1966,7 @@ typedef struct
     // FAT Boot sector
     FAT_BOOTSECTOR boot_sector <bgcolor=cLtPurple>;
     if (!IsValidFatBootSector(boot_sector)) {
-        Printf("INVALID FAT (%08Xh): Drive creation attempted when boot sector invalid?\r\n", startof(boot_sector));
+        Printf("INVALID FAT (%08Xh): Drive creation attempted when boot sector invalid?", startof(boot_sector));
         return;
     }
 
@@ -3950,7 +4044,11 @@ typedef union
     struct FAT_BOOTSECTOR boot_fat;
     struct NTFS_BOOTSECTOR boot_ntfs;
     struct IFS_BOOTSECTOR boot_ifs;
-} DRIVE_NOT_SUPPORTED;
+    // BUGBUG -- as of v9.0c, the parser has a bug with non-optimized arrays declared within a union; workaround is to wrap in a struct
+    struct {
+       struct EXFAT_BOOT_REGION boot_exfat[2];
+    } exfat;
+} DRIVE_NOT_SUPPORTED <optimize=false>;
 
 //################################################################
 // Detect drive type
@@ -3991,11 +4089,29 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
             //               which includes potentially guessing sector size (512 vs. 4096)
             // BUGBUG-4kn: see above line
             EXFAT_BOOT_REGION exfat_boot_region <hidden=true>;
-            if (IsValidExfatBootSector(exfat_boot_region.Boot)) {
-                //Printf("FSREC      : Valid: exFAT\r\n");
+            if (IsValidExfatBootRegion(exfat_boot_region)) {
+                Printf("FSREC      : Valid: exFAT first boot region\r\n");
                 result |= FILE_SYSTEM_TYPE_EXFAT;
             } else {
-                //Printf("FSREC      : exFAT not valid\r\n");
+                // Try 512 byte sectors?
+                FSeek(startPos + (12 * 512));
+                EXFAT_BOOT_REGION exfat_boot_region_512 <hidden=true>;
+                if (IsValidExfatBootRegion(exfat_boot_region_512) &&
+                    (exfat_boot_region_512.Boot.BytesPerSector == 512)) {
+                    Printf("FSREC      : Valid: exFAT second boot region at +512 bytes\r\n");
+                    result |= FILE_SYSTEM_TYPE_EXFAT;
+                } else {
+                    // try 4k sectors?
+                    FSeek(startPos + (12 * 4096));
+                    EXFAT_BOOT_REGION exfat_boot_region_4k <hidden=true>;
+                    if (IsValidExfatBootRegion(exfat_boot_region_4k) &&
+                        (exfat_boot_region_4k.Boot.BytesPerSector == 4096)) {
+                        Printf("FSREC      : Valid: exFAT second boot region at +4k bytes\r\n");
+                        result |= FILE_SYSTEM_TYPE_EXFAT;
+                    } else {
+                        //Printf("FSREC      : exFAT not valid\r\n");
+                    }
+                }
             }
         }
     }
@@ -4256,7 +4372,7 @@ int AutoDetectDrive( int SystemID )
         FSeek(startPos); // reset after calling FSRec()
     }
     if (detected == FILE_SYSTEM_TYPE_NONE) {
-        Printf("ADD()      : No drive due to no valid detected file system at offset 0x%08x\r\n", startPos);
+        Printf("ADD()      : No drive due to no valid detected file system at offset %08Xh\r\n", startPos);
         return false; // not found
     }
 
@@ -4288,6 +4404,7 @@ int AutoDetectDrive( int SystemID )
         Assert(!"Unsupported file system type?");
         return false;
     }
+    
     // TODO -- Update detected sector size, if not already known and
     //         the most-recently added drive adds that capability
     return true;
