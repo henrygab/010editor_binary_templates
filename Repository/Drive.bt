@@ -4265,36 +4265,32 @@ int AutoDetectDrive( int SystemID )
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
         Printf("ADD()      : adding EXFAT\r\n");
         EXFAT_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
         Printf("ADD()      : adding FAT32\r\n");
         FAT_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT16) {
         Printf("ADD()      : adding FAT16\r\n");
         FAT_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
         Printf("ADD()      : adding FAT12\r\n");
         FAT_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_NTFS) {
         Printf("ADD()      : adding NTFS\r\n");
         NTFS_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_HPFS) {
         Printf("ADD()      : adding HPFS\r\n");
         HFS_DRIVE drive;
-        return true;
     } else if (detected & FILE_SYSTEM_TYPE_IFS) {
         Printf("ADD()      : adding IFS\r\n");
         IFS_BOOTSECTOR drive;
-        return true;
+    } else {
+        Printf("**** ADD() : Unsupported detected %s\r\n", EnumToString(detected));
+        Assert(!"Unsupported file system type?");
+        return false;
     }
-    Printf("**** ADD() : Unsupported detected %s\r\n", EnumToString(detected));
-    Assert(!"Unsupported file system type?");
-    return false;
-
+    // TODO -- Update detected sector size, if not already known and
+    //         the most-recently added drive adds that capability
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////
