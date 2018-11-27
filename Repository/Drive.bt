@@ -1,3 +1,11 @@
+// TODO:
+// Update 'DetectedSectorSize' when creating any supported drive
+// Move ***ALL*** variable declarations to top of function (avoid runtime bugs with multiple declarations)
+// For a given section:
+//    forward-define all structures, with inline documentation on use.
+//    move all enums to top of file
+//
+
 //------------------------------------------------
 //--- 010 Editor v7.0 Binary Template
 //
@@ -45,6 +53,29 @@ typedef enum <int> {
     boolean_true_negative_one = -1,
     boolean_just_use_true_and_false = 0xbaadf00d
 } boolean;
+
+boolean IsExactlyOneBitSet( UQUAD value ) {
+    return 0 == (value & (value-1));
+}
+DWORD BytesPerSectorToBytePerSectorShift(DWORD BytesPerSector) {
+    Assert(IsExactlyOneBitSet(BytesPerSector));
+    local DWORD i = 0;
+    local DWORD tmp = BytesPerSector;
+    // 1 == 2^0
+    while (tmp != 1) {
+        tmp >>= 1;
+        i++;
+    }
+    return i;
+}
+DWORD BytesPerSectorShiftToBytesPerSector(DWORD BytesPerSectorShift) {
+    Assert(BytesPerSectorShift >= 9);
+    Assert(BytesPerSectorShift <= 12);
+    local DWORD result = 1;
+    result <<= BytesPerSectorShift;
+    return result;
+}
+
 
 //################################################################
 // MBR - Master Boot Record (contains partition information)
@@ -282,7 +313,8 @@ typedef struct {
     UBYTE Part4[2];
     UBYTE Part5[6];
     if (was_big_endian) { BigEndian(); }
-} GUID <read=ReadGUID, write=WriteGUID, format=hex>;
+} GUID <read=ReadGUID, write=WriteGUID, format=hex, optimize=false>;
+
 string ReadGUID( GUID &g )
 {
     local boolean was_big_endian <hidden=true> = IsBigEndian();
@@ -509,7 +541,7 @@ typedef struct
     local int size <hidden=true> = parentof(this).header.PartitionSize;
     if( size > 128 )
         UBYTE   Unused[ size - 128 ] <format=hex>;
-} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>;
+} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY, optimize=false>;
 
 // Show EFI partition name and EFI type beside the entry
 wstring ReadEFI_PARTITION_ENTRY( EFI_PARTITION_ENTRY &entry )
@@ -551,10 +583,10 @@ typedef struct
 
         // Create array of partitions
         if( count > 0 )
-            EFI_PARTITION_ENTRY partitions[count] <optimize=true>;
+            EFI_PARTITION_ENTRY partitions[count];
     }
 
-} EFI_PARTITION;
+} EFI_PARTITION <optimize=false>;
 
 //################################################################
 // File system support section
@@ -602,7 +634,7 @@ string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
 //################################################################
 local const boolean IFS_VARIABLE_LENGTH_STRUCTURE <hidden=true> = false;
 
-typedef struct IFS_BOOTSECTOR { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
+typedef struct { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
     BYTE    jmp[3]          <format=hex>;
     CHAR    OemName[8];
     BYTE    MustBeZero[5]   <format=hex>;
@@ -617,7 +649,8 @@ typedef struct IFS_BOOTSECTOR { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Mi
     if (IFS_VARIABLE_LENGTH_STRUCTURE && (Length > 24) && (ExpectedChecksum == Checksum)) {
         BYTE AdditionalData[Length-24] <format=hex>;
     }
-};
+} IFS_BOOTSECTOR <optimize=false>;
+
 // use a larger type to allow non-valid values (any value over 0xFFFF) to indicate errors
 UINT32 Calculate_IFS_BOOTSECTOR_Checksum( IFS_BOOTSECTOR& boot )
 {
@@ -725,12 +758,13 @@ typedef struct {
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
+    local int InternallyValid = 0;
     local DWORD bytesPerSector <hidden=true> = 1 << BytesPerSectorShift;
     BYTE ExtendedBootCode[bytesPerSector-4];
     DWORD ExtendedBootSignature; // must be 0xAA50_0000
 
-    local int InternallyValid = this.ExtendedBootSignature == 0xAA550000;
-} EXFAT_BOOT_EXTENDED_SECTOR;
+    InternallyValid = this.ExtendedBootSignature == 0xAA550000;
+} EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
 
 typedef struct {
     GUID ParameterGuid;
@@ -768,28 +802,29 @@ typedef struct (UBYTE BytesPerSectorShift) {
     }
     Assert( FTell() - start == 480 );
     UBYTE Reserved[ bytesPerSector - 480 ];    
-} EXFAT_BOOT_OEM_PARAMETER_SECTOR;
+} EXFAT_BOOT_OEM_PARAMETER_SECTOR <optimize=false>;
 
 typedef struct (UBYTE BytesPerSectorShift) {
-    Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
-    local DWORD bytesPerSector <hidden=true> = 1 << BytesPerSectorShift;
-    UBYTE Reserved[ bytesPerSector ];
+    Assert(BytesPerSectorShift >= 9);
+    Assert(BytesPerSectorShift <= 12); // 512 .. 4096 only
+    UBYTE Reserved[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) ];
 } EXFAT_BOOT_RESERVED_SECTOR;
 
 typedef struct (UBYTE BytesPerSectorShift) {
     Assert(BytesPerSectorShift >= 9 && BytesPerSectorShift <= 12); // 512 .. 4096 only
+    local boolean InternallyValid = 1;
+    local quad start = FTell();
     local DWORD checksumCopies <hidden=true> = 1 << (BytesPerSectorShift - 2); // aka bytes/4
     DWORD Checksum[checksumCopies];
     
     local DWORD i <hidden=true>;
-    local boolean InternallyValid = 1;
     for (i = 0; InternallyValid && i < checksumCopies; i++) {
         if (Checksum[0] != Checksum[i]) {
             Printf("INVALID exFAT (%08x): Checksum sector value differs at index %xh, value 0x%08x != 0x%08x\r\n", startof(boot), i, Checksum[0], Checksum[i]);
             InternallyValid = 0;
         }
     }
-} EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR>;
+} EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR, optimize=false>;
 
 string ReadEXFAT_BOOT_CHECKSUM_SECTOR( EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
     if (!sector.InternallyValid) { return "Invalid"; }
@@ -800,77 +835,57 @@ string ReadEXFAT_BOOT_CHECKSUM_SECTOR( EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
 typedef struct {
     local DWORD i <hidden=true>;
     local boolean InternallyValid = 0; // used to detect validity
-
-    // NOTE -- typeof 'this' pointer in struct declaration cannot be known
-    //         at location of structure definition... it depends on whether
-    //         the struct was instantiated as a single element, or as an array(!).
-    //
-    //         Per Sweetscape, this is a side-effect of how they can efficiently
-    //         support arrays with millions of items.  When instantiated as an
-    //         array, there is only one copy of the actual structure, and all
-    //         indices are presumed to have identical elements and ordering.
-    //
-    //         While the above is a neat hack, it causes both sizeof(this) and
-    //         the type assigned to (this) to differ, based on if instantiated
-    //         as an array or not.
-    //
-    //         The only way currently known to use 'this' (e.g., as parameter)
-    //         is to set attribute optimize=false.  This has the unfortunate
-    //         side effect of preventing the UI from "collapsing" the structure
-    //         when it's instantiated as an array....
-    //
+    local DWORD bps_shift;
 
     EXFAT_BOOTSECTOR Boot;
-    if (this.Boot.InternallyValid == 0) {
-        // Printf("EXFAT (0x%08x): Boot sector not internally valid\r\n", startof(this));
-        return;
-    }
-    for (i = 0; i < 8; i++) {
-        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(this.Boot.BytesPerSectorShift);
-        if (this.ExtendedBoot[i].InternallyValid == 0) {
-            //Printf("EXFAT (0x%08x):  Extended Boot Sector %d signature invalid\r\n", startof(this), i);
-            return;
+    bps_shift = Boot.BytesPerSectorShift;
+    if (9 > bps_shift || 12 < bps_shift) { // only support 512..4096 byte sectors
+        if (0 != DetectedSectorSize) {
+            Printf("EXFAT: Using previously detected sector size: %d\r\n", DetectedSectorSize);
+            bps_shift = BytesPerSectorToBytePerSectorShift(DetectedSectorSize);
+        } else {
+            Printf("EXFAT: Using _presumed_ sector size: %d\r\n", DefaultSectorSize);
+            bps_shift = BytesPerSectorToBytePerSectorShift(DefaultSectorSize);
         }
     }
-    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(this.Boot.BytesPerSectorShift); // no validation
-    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(this.Boot.BytesPerSectorShift); // no validation
-    
-    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(this.Boot.BytesPerSectorShift);
-    if (this.ChecksumSector.InternallyValid == 0) {
-        return;
+    for (i = 0; i < 8; i++) {
+        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(bps_shift);
     }
-    local DWORD ExpectedChecksum = CalculateExpectedExfatBootRegionChecksum(this);
+    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(bps_shift); // no validation
+    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(bps_shift); // no validation
+    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(bps_shift);
     
-    this.InternallyValid = IsValidExfatBootRegion(this);    
+    InternallyValid = IsValidExfatBootRegion(this);    
 
 } EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
 
 string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
-    if (!boot_region.Boot.InternallyValid) {
-        return "Invalid (Boot sector)";
-    }
+    string result;
     local int i <hidden=true> = 0;
     local string s <hidden=true>;
+    if (!boot_region.Boot.InternallyValid) {
+        result += "Invalid (Boot sector)\r\n";
+    }
+
     while (exists(boot_region.ExtendedBoot[i])) {
         if (!boot_region.ExtendedBoot[i].InternallyValid) {
-            SPrintf(s, "Invalid (extended boot sector %d)", i);
-            return s;
+            SPrintf(s, "Invalid (extended boot sector %d)\r\n", i);
+            result += s;
         }
         i++;
     }
     if (!boot_region.ChecksumSector.InternallyValid) {
-        return "Invalid (ChecksumSector)";
-    }
-    local DWORD expectedChecksum = boot_region.ExpectedChecksum;
-    if (boot_region.ChecksumSector.Checksum[0] != expectedChecksum) {
-        return "Invalid (wrong checksum)";
+        result += "Invalid (ChecksumSector)";
     }
     if (!boot_region.InternallyValid) {
-        return "Invalid";
+        SPrintf(s, "Invalid (Checksum is not %08Xh)\r\n", boot_region.ChecksumSector.Checksum[0]);
+        result += s;
+    }
+    if (0 == Strlen(result)) {
+        result = SPrintf(s, "EXFAT (s/n %08Xh) @ %08Xh", boot_region.Boot.VolumeSerialNumber, startof(boot_region));
     }
     // else it's valid, so just say so...
-    s = SPrintf(s, "EXFAT (s/n %08Xh)", boot_region.Boot.VolumeSerialNumber);
-    return s;
+    return result;
 }
 
 
@@ -961,20 +976,39 @@ boolean IsValidExfatBootSector(EXFAT_BOOTSECTOR &boot) {
     return true;
 }
 
-boolean IsValidExfatBootRegion(EXFAT_BOOT_REGION &boot_region) {
-    if (!boot_region.Boot.InternallyValid) {
-        Printf("INVALID EXFAT (0x%08x): Boot region boot sector internally invalid\r\n", startof(this));
-        return false;
+boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
+    local int i;
+    // Don't process multiple times
+    if (boot_region.InternallyValid) {
+        return true;
     }
+
+    // Boot region's internal validation...
+    if (!boot_region.Boot.InternallyValid) {
+        if (!IsValidExfatBootSector(boot_region.Boot)) {
+            Printf("INVALID EXFAT (%08Xh): Boot region boot sector internally invalid\r\n", startof(boot_region));
+            return false;
+        } else {
+            boot_region.Boot.InternallyValid = true;
+        }
+    }
+    for (i = 0; i < 8; i++) {
+        if (!boot_region.ExtendedBoot[i].InternallyValid) {
+            Printf("INVALID EXFAT (%08Xh):  ExtendedBoot[%d] internally invalid\r\n", startof(boot_region), i);
+            return false;
+        }
+    }
+
     if (!boot_region.ChecksumSector.InternallyValid) {
         Printf("INVALID EXFAT (0x%08x): Boot region checksum sector internally invalid\r\n", startof(this));
         return false;
     }
-    local DWORD expectedChecksum = boot_region.ExpectedChecksum;
-    if (boot_region.ChecksumSector.Checksum[0] != expectedChecksum) {
-        Printf("INVALID EXFAT (0x%08x): Boot region checksum value (0x%08x) does not match calculated value (0x%08x)\r\n", startof(this), this.ChecksumSector.Checksum[0], expectedChecksum);
+    local DWORD expected_checksum = CalculateExpectedExfatBootRegionChecksum(boot_region);
+    if (boot_region.ChecksumSector.Checksum[0] != expected_checksum) {
+        Printf("INVALID EXFAT (0x%08x): Boot region checksum value (0x%08x) does not match calculated value (0x%08x)\r\n", startof(this), boot_region.ChecksumSector.Checksum[0], expected_checksum);
         return false;
     }
+    Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
     return true;
 }
 
@@ -1163,11 +1197,9 @@ typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
     UBYTE  SecondaryEntriesCount;   // 1
     USHORT EntrySetChecksum;        // 2..3
-    struct {
-        USHORT AllocationPossible : 1;
-        USHORT NoFatChain         : 1;
-        USHORT CustomDefined      : 14;
-    } Flags;                        // 4..5
+    USHORT AllocationPossible : 1;
+    USHORT NoFatChain         : 1;
+    // USHORT CustomDefined      : 14;
     UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
@@ -1175,11 +1207,9 @@ typedef struct {
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
-    struct {
-        UBYTE AllocationPossible  : 1;
-        USHORT NoFatChain         : 1;
-        USHORT CustomDefined      : 6; // not correct in 8321439 c30 l59
-    } Flags;                        // 1
+    UBYTE AllocationPossible  : 1;
+    USHORT NoFatChain         : 1;
+    // USHORT CustomDefined      : 6; // not correct in 8321439 c30 l59
     UBYTE  CustomDefined[18];       // 2..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
@@ -1216,19 +1246,15 @@ typedef struct {
     local int i <hidden=true> = 0;
     local quad pos <hidden=true>;
 
-    // BUGBUG -- typeof 'this' pointer in struct declaration cannot be known
-    //           at location of structure definition... it depends on whether
-    //           the struct was instantiated as a single element, or as an array(!).
-    //           Sent bug report to Sweetscape, currently considered part of language design.
-    //           Requested consideration of how to solve problem of writing a single struct
-    //           that can be instantiated as both single instance and array, while using 'this'.
-    // EXFAT_BOOT_REGION boot_region[2];
-    // NOTE: Workaround of <optimize=off> is equivalent to the following
-    EXFAT_BOOT_REGION boot_region;
-    EXFAT_BOOT_REGION boot_region;
+    EXFAT_BOOT_REGION boot_region[2];
 
     // Which boot region to use?  First one that's valid....
     local int idx = -1;
+    for (i = 0; i < 2; i++) {
+        Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
+        boot_region[i].InternallyValid = IsValidExfatBootRegion( boot_region[i] );
+    }
+
     if (boot_region[0].InternallyValid) {
         idx = 0;
     } else if (boot_region[1].InternallyValid) {
@@ -1293,7 +1319,7 @@ typedef struct {
 */
 
 
-} EXFAT_DRIVE;
+} EXFAT_DRIVE <open=true, optimize=false>;
 
 
 
@@ -1530,7 +1556,7 @@ typedef struct (DWORD CountOfDataClusters)
     // However, that functionality does not yet exist as of v9.0c.
     BitfieldEnablePadding();
 
-} FAT12_FAT_TABLE <read=ReadFAT12_FAT_TABLE>;
+} FAT12_FAT_TABLE <read=ReadFAT12_FAT_TABLE, optimize=false>;
 
 string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE &fat_table )
 {
@@ -1546,21 +1572,19 @@ string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE &fat_table )
 
 typedef struct (quad CountOfDataClusters)
 {
-    local quad start <hidden=true> = FTell();
     // show the first two entries as media type and partition status
     // FAT16 only supports 512 byte sectors(?)
     FAT16_MEDIA_TYPE      MediaType;      // legacy: FAT index 0 was used for media type
     FAT16_PARTITION_STATE PartitionState; // legacy: FAT index 1 was used for partition state
 
     // Then seek back to start, so FAT array indices correspond to stored values in the FAT chain
-    FSeek( start );
+    FSkip( -4 );
     FAT16_CLUSTER_INFO Cluster[ CountOfDataClusters + 2];
 } FAT16_FAT_TABLE;
 
 typedef struct (DWORD CountOfDataClusters)
 {
-    local quad start <hidden=true> = FTell();
-    local DWORD count_of_data_clusters = CountOfDataClusters;
+    local DWORD count_of_data_clusters = CountOfDataClusters; // not instance-dependent, so OK to optimize
 
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
     // Therefore, every usage will require the bitfield annotation (' : 28').
@@ -1574,11 +1598,12 @@ typedef struct (DWORD CountOfDataClusters)
     // at least as of v9.0c.
     // A loop such as below has the best chance of a future version
     // collapsing the displayed array.
-    FSeek( start );
-    local DWORD i <hidden=true> = CountOfDataClusters+2;
-    while (i > 0) {
+    FSkip( -8 );
+    local DWORD i <hidden=true>;
+    for (i = 0; i < CountOfDataClusters+2; i++) {
         // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
         // Therefore, every usage will require the bitfield annotation (' : 28').
+        // And... cannot declare this as an (optimized) array, because of the bitfield annotation
         FAT32_CLUSTER_INFO Cluster : 28;
         i -= 1;
     }
@@ -1656,7 +1681,7 @@ typedef struct  {
     } else {
         FsType = FILE_SYSTEM_TYPE_NONE; // oops
     }
-} FAT_BOOTSECTOR <read=ReadFAT_BOOTSECTOR>;
+} FAT_BOOTSECTOR <read=ReadFAT_BOOTSECTOR, optimize=false>;
 
 string ReadFAT_BOOTSECTOR( FAT_BOOTSECTOR &boot )
 {
@@ -1704,6 +1729,7 @@ DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
 DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
 {
     if (boot.BytesPerSector == 0) return 0;
+    if (!IsExactlyOneBitSet(boot.BytesPerSector)) return 0;
     if (boot.BytesPerSector != 512) { // TODO: Fix 4k native sectors to show correct file data
         Printf("WARNING: Potentially valid FAT file system at 0x%x.\r\n", startof(boot));
         Printf("         Shows non-512 bytes per sector (0x%x)\r\n", boot.BytesPerSector);
@@ -1888,7 +1914,7 @@ typedef struct
     FSeek( RootDirEntryFilePos );
     FAT_DIRECTORY root_dir;
 
-} FAT_DRIVE <open=true>;
+} FAT_DRIVE <open=true, optimize=false>;
 
 //################################################################
 // FAT Directory (Shared between FAT12, FAT16 and FAT32)
@@ -2349,7 +2375,7 @@ typedef struct
     //       e.g., create \Level1\Level2\Level3\, each with files before and after the subdirectory.
     FSeek( XYZZY_End );
 
-} FAT_DIRECTORY_ENTRY_SET <read=ReadFAT_DIRECTORY_ENTRY_SET>;
+} FAT_DIRECTORY_ENTRY_SET <read=ReadFAT_DIRECTORY_ENTRY_SET, optimize=false>;
 
 // Show file name beside directory entry
 int ReadFAT_SHORTENTRY_IsDeleted( FAT_SHORTENTRY &f )
@@ -2525,7 +2551,7 @@ typedef struct
             break;
     }
 
-} FAT_FILE_DATA <size=SizeFAT_FILE_DATA>;
+} FAT_FILE_DATA <size=SizeFAT_FILE_DATA, optimize=false>;
 
 // Use on-demand parsing for file data - do not load the data until the hierarchy is opened.
 //  By default we just assume this is 512 in length because the actual data may not
@@ -2554,7 +2580,7 @@ typedef struct
             break;
         FSeek( XYZZY_Start ); // needed for non-contiguous directories
     }
-} FAT_DIRECTORY <size=SizeFAT_DIRECTORY>;
+} FAT_DIRECTORY <size=SizeFAT_DIRECTORY, optimize=false>;
 
 // Use on-demand parsing for directories - do not load the data until the hierarchy is opened.
 //  By default we just assume this is 512 in length because the actual data may not
@@ -2797,7 +2823,7 @@ typedef struct
 
     // Jump to the end of the record
     FSeek( start + header.IndexEntryLength );
-} NTFS_ATTR_INDEX_ENTRY;
+} NTFS_ATTR_INDEX_ENTRY <optimize=false>;
 
 // NTFS File Name Index Entry
 typedef struct
@@ -2814,7 +2840,7 @@ typedef struct
 
     // Jump to the end of the record
     FSeek( start + header.IndexEntryLength );
-} NTFS_INDEX_FILE_NAME_ENTRY <read=ReadNTFS_INDEX_FILE_NAME_ENTRY>;
+} NTFS_INDEX_FILE_NAME_ENTRY <read=ReadNTFS_INDEX_FILE_NAME_ENTRY, optimize=false>;
 
 // Display file name and subnode beside index entry
 wstring ReadNTFS_INDEX_FILE_NAME_ENTRY( NTFS_INDEX_FILE_NAME_ENTRY &fn )
@@ -2882,7 +2908,7 @@ typedef struct
                  (FTell() - startPos < header.IndexEntriesSize + header.IndexEntriesOffset) );
     }
 
-} NTFS_FILE_INDEX;
+} NTFS_FILE_INDEX <optimize=false>;
 
 // Convert from an lcn (logical cluster number) to an address in the file
 UQUAD NTFS_LCNToAddress( UQUAD lcn, int DriveNum )
@@ -2922,7 +2948,7 @@ typedef struct
         LengthLeft -= RunLength * drive[DriveNum].ClusterSize;
         i++;
     }         
-} NTFS_FILE_DATA <size=1024>; // set size as 1024 as could be disjoint structures
+} NTFS_FILE_DATA <size=1024, optimize=false>; // set size as 1024 as could be disjoint structures
 
 // NTFS Attribute
 typedef struct
@@ -3020,7 +3046,7 @@ typedef struct
     // Jump to the end of the record
     FSeek( start + header.Length );
 
-} NTFS_ATTRIBUTE <read=ReadNTFS_ATTRIBUTE>;
+} NTFS_ATTRIBUTE <read=ReadNTFS_ATTRIBUTE,optimize=false>;
 
 // Display data beside the attribute
 string ReadNTFS_ATTRIBUTE( NTFS_ATTRIBUTE &attr )
@@ -3154,7 +3180,7 @@ typedef struct
     }
     FSeek( start + 1024 );
 
-} NTFS_DIRECTORY <size=1024>;
+} NTFS_DIRECTORY <size=1024, optimize=false>;
 
 // NTFS File Record
 typedef struct 
@@ -3206,7 +3232,7 @@ typedef struct
     // Jump to the end of the record
     FSeek( start + 1024 );
 
-} NTFS_FILE_RECORD <read=ReadNTFS_FILE_RECORD>; //, size=1024>;
+} NTFS_FILE_RECORD <read=ReadNTFS_FILE_RECORD, optimize=false>; //, size=1024>;
 
 // Display file name beside the file record
 wstring ReadNTFS_FILE_RECORD( NTFS_FILE_RECORD &fr )
@@ -3254,7 +3280,7 @@ typedef struct
 {
     local int DriveNum <hidden=true> = parentof(this).DriveNum; // keep track of which drive this belongs to
     NTFS_FILE_RECORD mft[16] <optimize=false>;
-} NTFS_MASTER_FILE_TABLE <read=ReadNTFS_MASTER_FILE_TABLE>;
+} NTFS_MASTER_FILE_TABLE <read=ReadNTFS_MASTER_FILE_TABLE,optimize=false>;
 
 // Display the volume label beside the master file table
 string ReadNTFS_MASTER_FILE_TABLE( NTFS_MASTER_FILE_TABLE &mft )
@@ -3288,7 +3314,7 @@ typedef struct
     FSeek( startof(mft) + 5*1024 );
     NTFS_FILE_RECORD root_dir;
 
-} NTFS_DRIVE <open=true>;
+} NTFS_DRIVE <open=true, optimize=false>;
 
 //################################################################
 // HFS Drives (macOS/iOS)
@@ -3626,7 +3652,7 @@ typedef struct
     HFS_ListFiles( parentof(this).DriveNum, parentof(this).folderInfo.folderID );
     FSeek( pos+4 );
     LittleEndian();
-} HFS_FolderList <size=4>; //use on-demand - size unknown
+} HFS_FolderList <size=4, optimize=false>; //use on-demand - size unknown
 
 // HFS - Folder stored in the catalog
 typedef struct
@@ -3639,7 +3665,8 @@ typedef struct
     local int64 pos <hidden=true> = FTell();
     HFS_FolderList  subDir;
     FSeek( pos );
-} HFS_Folder <read=ReadHFSFolder>;
+} HFS_Folder <read=ReadHFSFolder,optimize=false>;
+
 wstring ReadHFSFolder( HFS_Folder &rec )
 {
     if( rec.key.nodeName.length > 0 )
@@ -3666,7 +3693,7 @@ typedef struct
     UInt32                  reserved2;
     HFS_ForkData            dataFork;
     HFS_ForkData            resourceFork;
-} HFS_CatalogFile;
+} HFS_CatalogFile <optimize=false>;
 
 // HFS - Block of data in a file
 typedef struct (int size, uint64 lengthLeft)
@@ -3708,7 +3735,7 @@ typedef struct
     // BUGBUG-4kn -- magic required here to support 4k sectors on HFS
     FSeek( pos + DefaultSectorSize );
     LittleEndian();
-} HFS_FileData <size=DefaultSectorSize>; //use on-demand - size unknown
+} HFS_FileData <size=DefaultSectorSize, optimize=false>; //use on-demand - size unknown
 
 // HFS - File stored in the catalog
 typedef struct
@@ -3725,7 +3752,8 @@ typedef struct
         HFS_FileData  fileData;
         FSeek( pos );
     }
-} HFS_File <read=ReadHFSFile>;
+} HFS_File <read=ReadHFSFile, optimize=false>;
+
 wstring ReadHFSFile( HFS_File &rec )
 {
     if( rec.key.nodeName.length > 0 )
@@ -3745,7 +3773,8 @@ typedef struct
     if( HFS_JumpToCatalogNode( DriveNum, link ) )
         HFS_BTNode          childNode;
     FSeek( pos );
-} HFS_CatalogRecord <read=ReadHFSCatalogRecord>;
+} HFS_CatalogRecord <read=ReadHFSCatalogRecord, optimize=false>;
+
 wstring ReadHFSCatalogRecord( HFS_CatalogRecord &rec )
 {
     if( rec.key.nodeName.length > 0 )
@@ -3835,7 +3864,7 @@ typedef struct
         }
     }
     LittleEndian();
-} HFS_BTNode <size=8192>; // use on-demand structure
+} HFS_BTNode <size=8192, optimize=false>; // use on-demand structure
 
 // HFS - Function to convert from a local block number to a drive block number using the extents
 int64 HFS_LocalToDriveBlock( HFS_ForkData &fork, int64 localBlock )
@@ -3886,7 +3915,7 @@ typedef struct
     // Define the root node
     if( HFS_JumpToCatalogNode( DriveNum, headerNode.header.rootNode ) )
         HFS_BTNode rootNode;
-} HFS_Catalog;
+} HFS_Catalog <optimize=false>;
 
 // Define an HFS drive
 typedef struct
@@ -3906,7 +3935,7 @@ typedef struct
     HFS_ListFiles( DriveNum, kHFSRootParentID );
     LittleEndian();
 
-} HFS_DRIVE <open=true>;
+} HFS_DRIVE <open=true, optimize=false>;
 
 //################################################################
 // Unknown Drives
@@ -4121,6 +4150,8 @@ int DriveAlreadyExists( int64 pos )
 // Function to detect different types of drives
 // NOTE: uses int instead of PARTITION_SYSTEMID (which is a byte)
 //       to allow callers to indicate 'unknown/undefined' by passing -1.
+// NOTE: if can determine sector size from a drive, save that, as it should
+//       be the same for all partitions...
 int AutoDetectDrive( int SystemID )
 {
     local int    i <hidden=true>;
@@ -4213,7 +4244,7 @@ int AutoDetectDrive( int SystemID )
 
     if (preferredType != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
-        FILE_SYSTEM_TYPE detected = FileSystemRecognizer(preferredType);
+        detected = FileSystemRecognizer(preferredType);
         FSeek(startPos); // reset after calling FSRec()
         if (detected == FILE_SYSTEM_TYPE_NONE) {
             Printf("ADD()      : Preferred type not detected, trying other types\r\n");
@@ -4230,7 +4261,7 @@ int AutoDetectDrive( int SystemID )
     }
 
     // assert that only one file system type was detected?
-    Assert( 0 == (detected & (detected-1)) );
+    Assert(IsExactlyOneBitSet(detected));
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
         Printf("ADD()      : adding EXFAT\r\n");
         EXFAT_DRIVE drive;
@@ -4257,7 +4288,7 @@ int AutoDetectDrive( int SystemID )
         return true;
     } else if (detected & FILE_SYSTEM_TYPE_IFS) {
         Printf("ADD()      : adding IFS\r\n");
-        IFS_BOOTSECTOR boot;
+        IFS_BOOTSECTOR drive;
         return true;
     }
     Printf("**** ADD() : Unsupported detected %s\r\n", EnumToString(detected));
