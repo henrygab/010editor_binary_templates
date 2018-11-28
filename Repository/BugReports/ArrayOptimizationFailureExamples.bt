@@ -3,13 +3,14 @@
 //
 //      File: ArrayOptimizationFailureExamples.bt
 //   Authors: HenryGab
-//   Version: 0.1
+//   Version: 0.2
 //   Purpose: Show various ways that array optimization
 //            can have unintended (and silent) side-effects
 //  Category: Bugs
 // File Mask: *
 //  ID Bytes: 
 //   History: 
+//   0.2   Add descriptoin of hack to prevent optimized instantiation (FIZZ)
 //   0.1   Initial creation
 //------------------------------------------------
 
@@ -17,7 +18,7 @@
 struct FOO;   // 4 bytes
 struct BAR;   // size is based on first byte, Min 4 bytes, max 0x20 bytes
 struct BAZ;   // 
-struct FIZZ;
+struct FIZZ;  // uses a hack to prevent instantiation as optimized array
 
 int ReadFOO_IsValid( const FOO& f ) { return f.Value == 0x54414658; }
 
@@ -54,13 +55,17 @@ typedef struct {
     local long offset = FTell() - pos;
 } BAZ <optimize=false>;
 
+void PreventOptimizedArray_FIZZ( const FIZZ& f ) { return; }
+
 typedef struct {
     int Value;
-    Printf("Value is %08Xh\r\n", Value);
-    // SILENTLY unsafe to optimize array…
-    // only evaluated for first instance
-    local long pos = FTell();
+    // Use a hack to prevent instantiation as an optimized array...
+    // If compiler says this line is in error, look for code
+    // that is trying to instantiate it as an optimized array
+    // (search for "optimize=true", used with this structure)
+    PreventOptimizedArray_FIZZ(this);
 } FIZZ <optimize=false>;
+
 
 local quad pos = 0; // start of exFAT formatted media
 
@@ -82,3 +87,9 @@ pos = 0x6c; // start of exFAT partition + 0x6c == BytesPerSectorShift
 FSeek(pos); BAZ epsilon; BAZ epsilon;
 // Silent failure: [0] uses 0xC bytes, so all instances use 0xC bytes
 FSeek(pos); BAZ zeta[2] <optimize=true>;
+
+
+FSeek(pos); FIZZ eta; FIZZ eta;
+// The following causes compilation error, as desired, to prevent
+// instantiation as an optimized array
+//FSeek(pos); FIZZ theta[2] <optimize=true>;
