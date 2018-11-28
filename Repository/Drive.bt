@@ -1190,11 +1190,13 @@ quad FilePositionForClusterIndexInFatTable(EXFAT_FAT_TABLE &fat_table, EXFAT_CLU
 
 typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
 {
+    local EXFAT_CLUSTER_INFO currentClusterIndex <hidden=true> = startingClusterIndex;
     local quad start <hidden=true> = FTell();
-    Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
-    Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value
-
+    local quad filePosition <hidden=true> = -1;
     local DWORD TotalClusterCount = 0;
+
+    Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
+    Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value, *** even if not stored in the FAT table ***
 
     // handle easy case of contiguous file entry first (no fat entries needed)
     if (0 != contiguousClusters) {
@@ -1203,8 +1205,6 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         return;
     }
 
-    local EXFAT_CLUSTER_INFO currentClusterIndex <hidden=true> = startingClusterIndex;
-    local quad filePosition <hidden=true> = -1;
     while (IsClusterIndexValidData(fat_table, currentClusterIndex)) {
         // keep it simple for now... non-contiguous just gets one entry for each one
         EXFAT_EXTENT extent(1);
@@ -1219,7 +1219,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     }
     // hack to avoid error that ending position was in front of starting position
     FSeek(start+4);
-} EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
+} EXFAT_CHAINED_EXTENTS <optimize=false,size=4>; // cannot optimize because count of extents varies...
 
 typedef enum <ubyte> {
     EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
@@ -1361,7 +1361,7 @@ typedef struct {
 // TODO: EXFAT_DIRENTRY_VOLUME_GUID
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_GUID (0xC0)
-    UBYTE SecondaryEntriesCount;     // 1
+    UBYTE  SecondaryEntriesCount;     // 1
     USHORT SetChecksum;              // 2..3
     USHORT AllocationPossible : 1;
     USHORT NoFatChain         : 1;
@@ -1397,29 +1397,27 @@ typedef struct {
     local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
     local int i <hidden=true> = 0;
     local quad pos <hidden=true>;
+    local quad fatSectorOffsetInVolume <hidden=true>;
+    local quad fatByteOffsetInVolume <hidden=true>;
+    local quad fatFilePosition <hidden=true>;
+    // Which boot region to use?  First one that's valid....
+    local int idx = -1;
 
     EXFAT_BOOT_REGION boot_region[2];
 
-    for (i = 0; i < 2; i++) {
+    for (i = 1; i >= 0; i--) {
         Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
-        boot_region[i].InternallyValid = IsValidExfatBootRegion( boot_region[i] );
+        if (IsValidExfatBootRegion(boot_region[i])) {
+            boot_region[i].InternallyValid = 1;
+            idx = i;
+        }
     }
-
-    // Which boot region to use?  First one that's valid....
-    local int idx = -1;
-    if (boot_region[0].InternallyValid) {
-        idx = 0;
-    } else if (boot_region[1].InternallyValid) {
-        idx = 1;
-    } else {
-        Printf("EXFAT (%08Xh): Neither boot region internally valid, so exiting early", startof(this));
+    if (-1 == idx) {
+        Printf("EXFAT (%08Xh): Neither boot region is valid, so exiting early", startof(this));
         return;
     }
     FsType = FILE_SYSTEM_TYPE_EXFAT;
 
-    local quad fatSectorOffsetInVolume <hidden=true>;
-    local quad fatByteOffsetInVolume <hidden=true>;
-    local quad fatFilePosition <hidden=true>;
     for (i = 0; i < boot_region[idx].Boot.NumberOfFatTables; i++) {
         fatSectorOffsetInVolume = boot_region[idx].Boot.FirstFatSectorOffset;
         fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat * i;
@@ -1437,6 +1435,7 @@ typedef struct {
     }
 
     pos = FTell();
+
     FSeek( startof(boot_region[idx].Boot.RootClusterIndex) );
     EXFAT_CHAINED_EXTENTS root_extent(
         fat[ boot_region[idx].Boot.VolumeFlags.ActiveFatIndex ],
@@ -1471,7 +1470,7 @@ typedef struct {
 */
 
 
-} EXFAT_DRIVE <open=true, optimize=false>;
+} EXFAT_DRIVE <open=true, optimize=false, size=512>;
 
 
 
@@ -1529,25 +1528,21 @@ typedef enum <ushort>
 
 string ReadFAT12_CLUSTER_INFO( FAT12_CLUSTER_INFO &info )
 {
+    local string s <hidden=true>;
     if (info == FAT12_CLUSTER_FREE_CLUSTER) {
-        return "FREE_CLUSTER (000h)";
+        s = "FREE_CLUSTER (000h)";
     } else if (info == FAT12_CLUSTER_RESERVED_0001) {
-        return "RESERVED (001h)";
+        s = "RESERVED (001h)";
     } else if (info >= 0xFF0 && info <= 0xFF6) {
-        local string s <hidden=true>;
         SPrintf(s, "RESERVED (%03xh)", info);
-        return s;
     } else if (info == FAT12_CLUSTER_BAD_CLUSTER) {
-        return "BAD_CLUSTER (FF7h)";
+        s = "BAD_CLUSTER (FF7h)";
     } else if (info >= 0xFF8 && info <= 0xFFF) {
-        local string s <hidden=true>;
         SPrintf(s, "END_OF_CHAIN (%03xh)", info);
-        return s;
     } else {
-        local string s <hidden=true>;
         SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-        return s;
     }
+    return s;
 }
 typedef enum <ushort>
 {
@@ -1585,25 +1580,21 @@ typedef enum <ushort>
 
 string ReadFAT16_CLUSTER_INFO( FAT16_CLUSTER_INFO &info )
 {
+    local string s <hidden=true>;
     if (info == FAT16_CLUSTER_FREE_CLUSTER) {
-        return "FREE_CLUSTER (0000h)";
+        s = "FREE_CLUSTER (0000h)";
     } else if (info == FAT16_CLUSTER_RESERVED_0001) {
-        return "RESERVED (0001h)";
+        s = "RESERVED (0001h)";
     } else if (info >= 0xFFF0 && info <= 0xFFF6) {
-        local string s <hidden=true>;
         SPrintf(s, "RESERVED (%04xh)", info);
-        return s;
     } else if (info == FAT16_CLUSTER_BAD_CLUSTER) {
-        return "BAD_CLUSTER (FFF7h)";
+        s = "BAD_CLUSTER (FFF7h)";
     } else if (info >= 0xFFF8 && info <= 0xFFFF) {
-        local string s <hidden=true>;
         SPrintf(s, "END_OF_CHAIN (%04xh)", info);
-        return s;
     } else {
-        local string s <hidden=true>;
         SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-        return s;
     }
+    return s;
 }
 
 // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
@@ -1654,13 +1645,13 @@ string ReadFAT32_CLUSTER_INFO( FAT32_CLUSTER_INFO &info )
     local string s <hidden=true> = "";
 
     if (tmp == FAT32_CLUSTER_FREE) {
-        s += "FREE_CLUSTER (00000000h)";
+        s = "FREE_CLUSTER (00000000h)";
     } else if (tmp == 0x00000001) {
-        s += "RESERVED (00000001h)";
+        s = "RESERVED (00000001h)";
     } else if (tmp >= 0x0FFFFFF0 && tmp <= 0x0FFFFFF6) {
         SPrintf(s, "RESERVED (%08xh)", tmp);
     } else if (tmp == FAT32_CLUSTER_BAD_CLUSTER) {
-        s += "BAD_CLUSTER (0FFFFFF7h)";
+        s = "BAD_CLUSTER (0FFFFFF7h)";
     } else if (tmp >= 0x0FFFFFF8 && tmp <= 0x0FFFFFFF) {
         SPrintf(s, "END_OF_CHAIN (%08xh)", info);
     } else {
@@ -1673,8 +1664,8 @@ typedef struct (DWORD CountOfDataClusters)
 {
     Assert(CountOfDataClusters <= 4085);
 
-    local quad startFilePosition <hidden=true> = FTell();
-    local DWORD count_of_data_clusters = CountOfDataClusters;
+    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK?
+    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK?
 
     // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
     // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
@@ -1688,14 +1679,13 @@ typedef struct (DWORD CountOfDataClusters)
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
     // Therefore, every usage will require the bitfield annotation (' : 12').
     FAT12_PARTITION_STATE PartitionState : 12;
+    FSkip( -3 );
     
     // HACKHACK - Per Sweetscape support, there is also no way to create
     // an array of bitfields that is shown collapsed (like "real" arrays),
     // at least as of v9.0c.
     // A loop such as below has the best chance of a future version
     // collapsing the displayed array.
-    FSeek( startFilePosition );
-    local DWORD i <hidden=true> = CountOfDataClusters+2;
     while (i > 0) {
         // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
         // Therefore, every usage will require the bitfield annotation (' : 12').
@@ -1737,7 +1727,8 @@ typedef struct (quad CountOfDataClusters)
 
 typedef struct (DWORD CountOfDataClusters)
 {
-    local DWORD count_of_data_clusters = CountOfDataClusters;
+    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK?
+    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK?
 
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
     // Therefore, every usage will require the bitfield annotation (' : 28').
@@ -1752,7 +1743,6 @@ typedef struct (DWORD CountOfDataClusters)
     // A loop such as below has the best chance of a future version
     // collapsing the displayed array.
     FSkip( -8 );
-    local DWORD i <hidden=true> = CountOfDataClusters+2;
     while (i > 0) {
         // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
         // Therefore, every usage will require the bitfield annotation (' : 28').
@@ -1774,6 +1764,15 @@ string ReadFAT32_FAT_TABLE( FAT32_FAT_TABLE &fat_table )
 }
 
 typedef struct  {
+    local INT64 tmp <hidden=true>;
+    local DWORD ClusterSize;
+    local DWORD NumberOfSectors;
+    local DWORD SectorsPerFat;
+    local DWORD CountOfDataClusters;
+    local DWORD MaximumValidClusterNumber;
+
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
+
     BYTE    jmp[3]                <format=hex>;
     CHAR    OemName[8];
     USHORT  BytesPerSector        <format=hex>; // legal == { 512, 1024, 2048, 4096 }
@@ -1809,18 +1808,17 @@ typedef struct  {
     CHAR   VolumeLabel[11]    <format=hex>; // only valid if ExtBootSignature == 0x29
     CHAR   FileSystemLabel[8] <format=hex>; // only valid if ExtBootSignature == 0x29
 
-    local INT64 tmp <hidden=true> = 510 - (FTell() - startof(this)); // 420 for FAT32, 448 for FAT16/12
+    tmp = 510 - (FTell() - startof(jmp)); // 420 for FAT32, 448 for FAT16/12
     UBYTE  BootCode[tmp]      <format=hex>;
     WORD   EndOfSectorMarker  <format=hex>;
 
     // Helpers to make FAT12/16/32 more common
-    local DWORD ClusterSize      = this.BytesPerSector * this.SectorsPerCluster;
-    local DWORD NumberOfSectors  = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
-    local DWORD SectorsPerFat    = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
-    local DWORD CountOfDataClusters = ReadFAT_BOOTSECTOR_CountOfDataClusters(this);
-    local DWORD MaximumValidClusterNumber = CountOfDataClusters + 1; // +2, but zero-based indexing, so largest valid value is Count+1
+    ClusterSize      = this.BytesPerSector * this.SectorsPerCluster;
+    NumberOfSectors  = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
+    SectorsPerFat    = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
+    CountOfDataClusters = ReadFAT_BOOTSECTOR_CountOfDataClusters(this);
+    MaximumValidClusterNumber = CountOfDataClusters + 1; // +2, but zero-based indexing, so largest valid value is Count+1
 
-    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
     if (CountOfDataClusters == 0) {
         //Printf("WARNING: Count of data clusters computed as zero, so not valid FAT filesystem\r\n");
         FsType = FILE_SYSTEM_TYPE_NONE; // oops
@@ -1845,6 +1843,8 @@ DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
     // First determine the number of bytes required.
     local DWORD required_bytes <hidden=true>;
     local DWORD required_entries <hidden=true>;
+    local DWORD required_sectors_per_fat <hidden=true>;
+
     // FAT tracks two extra entries at indices 0 and 1...
     required_entries = boot.CountOfDataClusters + 2;
     if (boot.FsType == FILE_SYSTEM_TYPE_FAT32) {
@@ -1869,7 +1869,6 @@ DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
     }
 
     // convert the number of bytes to number of sectors (rounding up)
-    local DWORD required_sectors_per_fat <hidden=true>;
     required_sectors_per_fat = required_bytes / boot.BytesPerSector;
     if (0 != (required_bytes % boot.BytesPerSector)) {
         required_sectors_per_fat += 1; // round up
@@ -1880,6 +1879,13 @@ DWORD ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters( FAT_BOOTSECTOR &boot )
 
 DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
 {
+    local DWORD rootDirectoryByteCount <hidden=true>;
+    local DWORD rootDirectorySectors <hidden=true>;
+    local DWORD sectorsPerFat <hidden=true>;
+    local DWORD totalSectors <hidden=true>;
+    local DWORD dataSectors <hidden=true>;
+    local DWORD countOfClusters <hidden=true>;
+
     if (boot.BytesPerSector == 0) return 0;
     if (!IsExactlyOneBitSet(boot.BytesPerSector)) return false;
 
@@ -1891,24 +1897,25 @@ DWORD ReadFAT_BOOTSECTOR_CountOfDataClusters( FAT_BOOTSECTOR &boot )
     }
 
     // First, the number of sectors in the special root directory area
-    local DWORD  rootDirectoryByteCount <hidden=true> = boot.MaxRootDirEntries * 32;
-    local DWORD  rootDirectorySectors <hidden=true> = rootDirectoryByteCount / boot.BytesPerSector;
+    rootDirectoryByteCount = boot.MaxRootDirEntries * 32;
+    rootDirectorySectors = rootDirectoryByteCount / boot.BytesPerSector;
     if (rootDirectoryByteCount % boot.BytesPerSector != 0) {
         rootDirectorySectors++;
     }
 
     // Next, the number of sectors in the data region
-    local DWORD sectorsPerFat <hidden=true> = boot.SectorsPerFat;
-    local DWORD totalSectors <hidden=true> = boot.NumberOfSectors;
-    local DWORD dataSectors <hidden=true> = totalSectors;
-    dataSectors -= boot.ReservedSectors;
-    dataSectors -= boot.NumberOfFatTables * sectorsPerFat;
-    dataSectors -= rootDirectorySectors;
-
-    local DWORD countOfClusters <hidden=true> = dataSectors / boot.SectorsPerCluster; // note that this rounds down
+    sectorsPerFat    = boot.SectorsPerFat;
+    totalSectors     = boot.NumberOfSectors;
+    dataSectors      = totalSectors;
+    dataSectors     -= boot.ReservedSectors;
+    dataSectors     -= boot.NumberOfFatTables * sectorsPerFat;
+    dataSectors     -= rootDirectorySectors;
+    countOfClusters  = dataSectors / boot.SectorsPerCluster; // note that this rounds down
     return countOfClusters;
 }
 boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
+    local DWORD required_sectors_per_fat <hidden=true>;
+
     // FAT12/16/32 don't specify quite as much as mandatory...
     if (boot.EndOfSectorMarker != 0xAA55) {
         Printf("INVALID FAT (%08Xh): EndOfSectorMark not 0xAA55 (0x55 0xAA)\r\n", startof(boot));
@@ -1993,7 +2000,6 @@ boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
             return false;
         }
     }
-    local DWORD required_sectors_per_fat <hidden=true>;
     required_sectors_per_fat = ReadFAT_BOOTSECTOR_SectorsRequiredForDataClusters(boot);
     if (boot.SectorsPerFat < required_sectors_per_fat) {
         Printf("INVALID FAT (%08Xh): 0x%x data clusters requires 0x%x sectors for each FAT, but boot indicates only 0x%x sectors per FAT.\r\n", startof(boot), boot.CountOfDataClusters, required_sectors_per_fat, boot.SectorsPerFAT);
@@ -2020,6 +2026,10 @@ typedef struct
     local quad  VolumeStartPosition=FTell();
     local DWORD MaxValidCluster;
     local int   i <hidden=true>;
+    local quad  BytesPerSector;
+    local quad  CurrentPosSector;
+    local FILE_SYSTEM_TYPE FsType;
+    local quad pos <hidden=true>;
 
 
     // FAT Boot sector
@@ -2029,8 +2039,8 @@ typedef struct
         return;
     }
 
-    local quad  BytesPerSector = boot_sector.BytesPerSector;
-    local quad  CurrentPosSector = VolumeStartPosition / BytesPerSector;
+    BytesPerSector = boot_sector.BytesPerSector;
+    CurrentPosSector = VolumeStartPosition / BytesPerSector;
 
     // Calculate offsets and sizes for file system areas
     FatTableSector            = CurrentPosSector   + boot_sector.ReservedSectors; // e.g., used for alignment on flash media
@@ -2046,10 +2056,9 @@ typedef struct
     MaxValidCluster           = boot_sector.MaximumValidClusterNumber;
 
     // Add this to the Drive structure also
-    local FILE_SYSTEM_TYPE FsType   = boot_sector.FsType;
+    FsType   = boot_sector.FsType;
 
     // Add the FAT structures
-    local quad pos <hidden=true>;
     for (i = 0; i < boot_sector.NumberOfFatTables; i++) {
         pos = FirstFatTableFilePos;
         pos += (boot_sector.SectorsPerFat * boot_sector.BytesPerSector * i);
@@ -2168,7 +2177,7 @@ string ReadFAT_ATTR_TYPE(FAT_ATTR_TYPE &type)
         }
     }
 
-    local uchar tmp2 <hidden=true> = type & FAT_ATTR_TYPE_RESERVED_MASK;
+    local uchar tmp2 <hidden=true> = type & FAT_ATTR_TYPE_RESERVED_MASK; // parser does not allow type to be only six bits long....
     if (tmp2) {
         local string q <hidden=true>;
         SPrintf(q, " + (Reserved bits) %02xh", tmp2);
@@ -2197,27 +2206,30 @@ typedef struct // Normal-Short structure
 
 string ReadFAT_SHORTENTRY_Filename( FAT_SHORTENTRY &f )
 {
+    local int nameLength <hidden=true> = 8;
+    local int extensionLength <hidden=true> = 3;
+    local string name <hidden=true>;
+    local string extension <hidden=true>;
+    local int addPeriod <hidden=true>;
+    local string result <hidden=true>;
+
     if (f.Name[0]==0)
     {
         return "";  // indicator of last directory entry
     }
-    local int nameLength <hidden=true> = 8;
-    local int extensionLength <hidden=true> = 3;
     while (nameLength      > 0 && f.Name     [ nameLength      - 1 ] == ' ') { nameLength      -= 1; }
     while (extensionLength > 0 && f.Extension[ extensionLength - 1 ] == ' ') { extensionLength -= 1; }
-    local string name <hidden=true>;
-    local string extension <hidden=true>;
     if (nameLength      > 0) { Strncpy(name,      f.Name,      nameLength     ); }
     if (extensionLength > 0) { Strncpy(extension, f.Extension, extensionLength); }
     
     // Add period only if extension exists, unless it's a FAT_ATTR_LongFileNameEntry or FAT_ATTR_VolumeID
-    local int addPeriod <hidden=true> = extensionLength > 0;
+    addPeriod = extensionLength > 0;
     if (f.Attribute == FAT_ATTR_LongFileNameEntry) {
         addPeriod = false;
     } else if (f.Attribute & FAT_ATTR_VolumeId) {
         addPeriod = false;
     }
-    local string result <hidden=true> = name;
+    result = name;
     if (addPeriod) { result += "."; }
     result += extension;
 
@@ -2241,7 +2253,7 @@ string ReadFAT_SHORTENTRY( FAT_SHORTENTRY &f )
         return "Last Dir Entry (Empty)";
     }
     s = ReadFAT_SHORTENTRY_Filename(f);
-    if( (uchar)f.Name[0] == 0xE5 ) // must goto structure, not processed filename, due to 0x05 --> 0xE5 Kanji conversion
+    if( (uchar)f.Name[0] == 0xE5 ) // must use structure array, not the processed filename, due to 0x05 --> 0xE5 Kanji conversion
     {
         return "**Erased name '?" + StrDel(s, 0, 1) + "' (" + ReadFAT_ATTR_TYPE(f.Attribute) + ")";
     }
@@ -2884,7 +2896,7 @@ typedef struct
 // Show some information beside the flag name
 string ReadNTFS_FILE_FLAGS( NTFS_FILE_FLAGS &flags )
 {
-    string s;
+    local string s <hidden=true>;
     if( flags.Directory )
         s += "Directory ";
     if( flags.ReadOnly )
@@ -2900,6 +2912,7 @@ string ReadNTFS_FILE_FLAGS( NTFS_FILE_FLAGS &flags )
 typedef struct
 {
     local int64 start <hidden=true> = FTell();
+
     BitfieldDisablePadding();
     UQUAD       FileRecordNumber : 48;
     UQUAD       SequenceNumber : 16;    
@@ -2914,8 +2927,9 @@ typedef struct
     DWORD       Reparse;
     UBYTE       FileNameLength;
     NTFS_NAMESPACE  Namespace; 
-    if( FileNameLength > 0 )
+    if( FileNameLength > 0 ) {
         wchar_t     FileName[ FileNameLength ];
+    }
 } NTFS_ATTR_FILE_NAME;
 
 // NTFS Volume Name
@@ -2965,6 +2979,7 @@ typedef struct
 typedef struct
 {
     local int64 start <hidden=true> = FTell();
+
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
         UBYTE   Stream[header.StreamLength];
@@ -2982,6 +2997,7 @@ typedef struct
 typedef struct
 {
     local int64 start <hidden=true> = FTell();
+
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
         NTFS_ATTR_FILE_NAME fileNameAttr;
@@ -3000,7 +3016,9 @@ wstring ReadNTFS_INDEX_FILE_NAME_ENTRY( NTFS_INDEX_FILE_NAME_ENTRY &fn )
 {
     local string s <hidden=true>;
     if( exists( fn.fileNameAttr ) )
+    {
         s = fn.fileNameAttr.FileName;
+    }
     if( fn.header.HasSubNode )
     {
         local string subnode <hidden=true>;
@@ -3025,13 +3043,16 @@ typedef struct
 typedef struct ( UQUAD maxPos ) 
 {
     while( (ReadUByte( FTell() ) != 0) && (FTell() < maxPos) )
+    {
         NTFS_RUN run;
+    }
 } NTFS_RUN_LIST;
 
 // NTFS File Index
 typedef struct
 {
     local int64 startPos <hidden=true> = FTell();
+    local int i <hidden=true>;
 
     struct NTFS_INDEX_HEADER {
         UCHAR   Magic[4];
@@ -3045,14 +3066,15 @@ typedef struct
         DWORD   HasChildren;
         WORD    UpdateSequence;
         if( UpdateSequenceSize > 0 )
+        {
             WORD    UpdateSequenceArray[UpdateSequenceSize];
+        }
     } header;
 
     // Create the list of file name entries here
     if( header.Magic == "INDX" )
     {
         FSeek( startPos + 0x18 + header.IndexEntriesOffset );
-        local int i <hidden=true>;
         do
         {
             NTFS_INDEX_FILE_NAME_ENTRY entry;
@@ -3107,6 +3129,8 @@ typedef struct
 typedef struct
 {
     local int64 start <hidden=true> = FTell();
+    local int i <hidden=true>;
+
     struct NTFS_ATTRIBUTE_HEADER
     {
         NTFS_ATTR_TYPE Type;
@@ -3138,20 +3162,30 @@ typedef struct
             UBYTE   Padding;
         }
         if( NameLength > 0 )
+        {
             wchar_t Name[NameLength];
+        }
     } header;
 
     if( !header.NonResident )
     {
         // Resident attributes
         if( header.Type == STANDARD_INFORMATION )
+        {
             NTFS_ATTR_STANDARD standardInformation; 
+        }
         else if( header.Type == FILE_NAME )
+        {
             NTFS_ATTR_FILE_NAME fileName; 
+        }
         else if( header.Type == VOLUME_NAME )
+        {
             NTFS_ATTR_VOLUME_NAME volumeName( header.AttributeLength ); 
+        }
         else if( header.Type == VOLUME_INFORMATION )
+        {
             NTFS_ATTR_VOLUME_INFO volumeInfo; 
+        }
         else if( header.Type == INDEX_ROOT )
         {
             // Stores the root nodes of the btree index for file names
@@ -3168,7 +3202,9 @@ typedef struct
         {
             // File data is stored directly in the header for small files
             if( header.AttributeLength > 0 )
+            {
                 ubyte fileData[ header.AttributeLength ];
+            }
         }
     }
     else
@@ -3179,12 +3215,13 @@ typedef struct
         if( (header.Type == INDEX_ALLOCATION) && (parentof(this).header.IsDirectory) )
         {
             // Stores an index (btree) of file names
-            local int i <hidden=true>;
             for( i = 0; i <= header.LastVCN; i++ )
             {
                 FSeek( NTFS_LCNToAddress( NTFS_VCNToLCN( runList, i ), parentof(parentof(this)).DriveNum ) );
                 if( ReadString( FTell(), 4 ) != "INDX" ) // make sure header is there
+                {
                     break;
+                }
                 NTFS_FILE_INDEX index;
             }
         }
@@ -3206,13 +3243,21 @@ string ReadNTFS_ATTRIBUTE( NTFS_ATTRIBUTE &attr )
 {
     string s;
     if( attr.header.Type == FILE_NAME )
+    {
         SPrintf( s, "%s = %s", EnumToString( attr.header.Type ), attr.fileName.FileName );
+    }
     else if( attr.header.Type == VOLUME_NAME )
+    {
         SPrintf( s, "%s = %s", EnumToString( attr.header.Type ), attr.volumeName.VolumeName );
+    }
     else
+    {
         s = EnumToString( attr.header.Type );
+    }
     if( attr.header.NonResident )
+    {
         s += " (Non-Resident)";
+    }
     return s;
 }
 
@@ -3235,6 +3280,7 @@ UQUAD NTFS_VCNToLCN( NTFS_RUN_LIST &runlist, UQUAD vcn )
 {
     local int i <hidden=true>;
     local UQUAD offset <hidden=true> = 0;
+
     while( exists( runlist.run[i] ) )
     {
         // Move ahead using LCNOffset
@@ -3267,6 +3313,10 @@ UQUAD NTFS_ListFiles( NTFS_INDEX_FILE_NAME_ENTRY &entry, NTFS_ATTRIBUTE &allocat
 {
     // Step into sub-node - watch for infinite recursion
     local int k <hidden=true> = 0;
+    local int dataAttr <hidden=true>;
+    local int fileRecsPerCluster <hidden=true>;
+    local UQUAD lcn  <hidden=true>;
+
     if( entry.header.HasSubNode && (level < 10) )
     {
         while( 1 )
@@ -3286,14 +3336,18 @@ UQUAD NTFS_ListFiles( NTFS_INDEX_FILE_NAME_ENTRY &entry, NTFS_ATTRIBUTE &allocat
         {
             // Locate the file position - have to use the runlist of the mft
             previousFile = entry.header.FileRecordNumber;
-            local int dataAttr <hidden=true> = NTFS_FindAttribute( drive[DriveNum].mft.mft[0], DATA );
-            local int fileRecsPerCluster <hidden=true> = drive[DriveNum].ClusterSize / 1024;
-            local UQUAD lcn  <hidden=true> = NTFS_VCNToLCN( drive[DriveNum].mft.mft[0].attribute[dataAttr].runList, entry.header.FileRecordNumber/fileRecsPerCluster );
+            dataAttr = NTFS_FindAttribute( drive[DriveNum].mft.mft[0], DATA );
+            fileRecsPerCluster = drive[DriveNum].ClusterSize / 1024;
+            lcn = NTFS_VCNToLCN( drive[DriveNum].mft.mft[0].attribute[dataAttr].runList, entry.header.FileRecordNumber/fileRecsPerCluster );
             FSeek( NTFS_LCNToAddress( lcn, DriveNum ) + (entry.header.FileRecordNumber % fileRecsPerCluster)*1024 );
             if( ReadString( FTell(), 4 ) == "FILE" ) // make sure header is there
+            {
                 NTFS_FILE_RECORD file;
+            }
             else
+            {
                 DWORD invalid; // file record not found
+            }
         }
     }
     return previousFile;
@@ -3306,7 +3360,9 @@ int NTFS_FindAttribute( NTFS_FILE_RECORD &rec, NTFS_ATTR_TYPE type )
     while( exists(rec.attribute[i]) )
     {
         if( rec.attribute[i].header.Type == type )
+        {
             return i;
+        }
         i++;
     }
     return -1; // not found
@@ -3321,6 +3377,7 @@ typedef struct
     local UQUAD previousFile <hidden=true>  = 0xFFFFFFFFFFFFFFFFL;
     local int   i <hidden=true> = 0;
     local int64 start <hidden=true> = FTell();
+
     while( 1 )
     {
         // Iterate through the b-tree index and create the list of files
@@ -3339,6 +3396,7 @@ typedef struct
 typedef struct 
 {
     local int64 start <hidden=true> = FTell();
+    local int attrRoot <hidden=true>;
 
     // Header info
     struct FILE_RECORD_HEADER_NTFS
@@ -3364,18 +3422,24 @@ typedef struct
 
     // Check header
     if( header.Magic != "FILE" )
+    {
         return;
+    }
 
     // Read list of attributes
     while( (ReadUInt(FTell()) != 0xffffffff) && (FTell() - start < 1024) )
+    {
         NTFS_ATTRIBUTE attribute;
+    }
 
     // Add padding if necessary
     if( FTell() - start < 1024 )
+    {
         UBYTE padding[ 1024 - (FTell() - start) ];
+    }
 
     // Check if this is a directory
-    local int attrRoot <hidden=true> = NTFS_FindAttribute( this, INDEX_ROOT );
+    attrRoot = NTFS_FindAttribute( this, INDEX_ROOT );
     if( (attrRoot >= 0) && (header.IsDirectory) )
     {
         FSeek( start );
@@ -3392,17 +3456,22 @@ wstring ReadNTFS_FILE_RECORD( NTFS_FILE_RECORD &fr )
 {
     local string name <hidden=true>;
     local int attrNum <hidden=true> = NTFS_FindAttribute( fr, FILE_NAME );
+    local int hidden <hidden=true>;
+    local int system <hidden=true>;
+
     if( attrNum != -1 )
     {
         // Skip short DOS names
         if( (fr.attribute[attrNum].fileName.Namespace == NAMESPACE_DOS) &&
             exists( fr.attribute[attrNum+1].fileName.FileName ) )
+        {
             attrNum++;
+        }
         name = fr.attribute[attrNum].fileName.FileName;
 
         // Check for hidden, system
-        local int hidden <hidden=true> = fr.attribute[attrNum].fileName.Flags.Hidden;
-        local int system <hidden=true> = fr.attribute[attrNum].fileName.Flags.System;
+        hidden = fr.attribute[attrNum].fileName.Flags.Hidden;
+        system = fr.attribute[attrNum].fileName.Flags.System;
         if( hidden || system )
         {
             name += " (";
@@ -3438,11 +3507,14 @@ typedef struct
 // Display the volume label beside the master file table
 string ReadNTFS_MASTER_FILE_TABLE( NTFS_MASTER_FILE_TABLE &mft )
 {
+    local int volAttr <hidden=true>;
     if( exists( mft.mft[3] ) )
     {
-        local int volAttr <hidden=true> = NTFS_FindAttribute( mft.mft[3], VOLUME_NAME );
+        volAttr = NTFS_FindAttribute( mft.mft[3], VOLUME_NAME );
         if( volAttr != -1 )
+        {
             return mft.mft[3].attribute[ volAttr ].volumeName.VolumeName;
+        }
     }
     return "";
 }
@@ -3504,9 +3576,13 @@ string HFSTimeRead( HFS_Time t )
 {   
     // Convert to FILETIME
     if( t == 0 )
+    {
         return "-";
+    }
     else
+    {
         return FileTimeToString( t*10000000L + 95616288000000000L );
+    }
 }
 int HFSTimeWrite( HFS_Time &t, string value )
 {
@@ -3627,7 +3703,9 @@ struct HFS_UniStr255
 {
     UInt16  length;
     if( length > 0 )
+    {
         wchar_t unicode[length];
+    }
 };
 
 // HFS Unix style permissions
@@ -3710,6 +3788,7 @@ typedef struct
     HFS_CatalogNodeID   parentID;
     HFS_UniStr255       nodeName;
 } HFS_CatalogKey <read=ReadHFSCatalogKey>;
+
 wstring ReadHFSCatalogKey( HFS_CatalogKey &key )
 {
     if( key.nodeName.length > 0 )
@@ -3749,6 +3828,7 @@ void HFS_ListFilesInNode( HFS_BTNode &node, uint folderID )
     local int64 pos <hidden=true>;
     local uint  nextID <hidden=true>;
     local int   count <hidden=true> = node.descriptor.numRecords;
+
     if( node.descriptor.kind == kBTIndexNode )
     {
         // Traverse down the index nodes looking for the proper parent id
@@ -3801,6 +3881,7 @@ typedef struct
 {
     local int DriveNum <hidden=true> = parentof(this).DriveNum;
     local int64 pos <hidden=true> = FTell();
+
     BigEndian();
     HFS_ListFiles( parentof(this).DriveNum, parentof(this).folderInfo.folderID );
     FSeek( pos+4 );
@@ -3811,6 +3892,7 @@ typedef struct
 typedef struct
 {
     local int DriveNum <hidden=true> = parentof(this).DriveNum;
+
     HFS_CatalogKey      key;
     HFS_CatalogFolder   folderInfo;
 
@@ -3823,7 +3905,9 @@ typedef struct
 wstring ReadHFSFolder( HFS_Folder &rec )
 {
     if( rec.key.nodeName.length > 0 )
+    {
         return "/" + rec.key.nodeName.unicode;
+    }
     return "";
 }
 
@@ -3852,7 +3936,9 @@ typedef struct
 typedef struct (int size, uint64 lengthLeft)
 {
     if( lengthLeft >= size )
+    {
         UBYTE data[ size ];
+    }
     else
     {
         UBYTE data[ lengthLeft ];
@@ -3868,6 +3954,7 @@ typedef struct
     local int blockSize <hidden=true> = drive[DriveNum].header.blockSize;
     local int i <hidden=true>, size <hidden=true>;
     local int64 pos <hidden=true> = FTell();
+
     BigEndian();
     for( i = 0; i < 8; i++ )
     {
@@ -3894,6 +3981,7 @@ typedef struct
 typedef struct
 {
     local int DriveNum <hidden=true> = parentof(this).DriveNum;
+
     HFS_CatalogKey          key;
     HFS_CatalogFile         fileInfo;
 
@@ -3910,7 +3998,9 @@ typedef struct
 wstring ReadHFSFile( HFS_File &rec )
 {
     if( rec.key.nodeName.length > 0 )
+    {
         return rec.key.nodeName.unicode;
+    }
     return "";
 }
 
@@ -3918,6 +4008,7 @@ wstring ReadHFSFile( HFS_File &rec )
 typedef struct 
 {
     local int DriveNum <hidden=true> = parentof(this).DriveNum;
+
     HFS_CatalogKey      key;
     UInt32              link;
 
@@ -3994,7 +4085,7 @@ typedef struct
     // Node descriptor
     BigEndian();
     HFS_BTNodeDescriptor  descriptor;
-    local int DriveNum <hidden=true> = parentof(parentof(descriptor)).DriveNum;
+    local int DriveNum <hidden=true> = parentof(parentof(descriptor)).DriveNum;  // BUGBUG/HACKHACK -- is this a way to handle optimized array?
     local int NodeSize <hidden=true> = drive[DriveNum].btree.headerNode.header.nodeSize;
 
     // Create each record of the node
@@ -4011,9 +4102,13 @@ typedef struct
             // Create leaf nodes - either file or folder
             recordType = ReadUShort( FTell() + ReadUShort( FTell()+6 )*2 + 8 );
             if( recordType == kHFSFolderRecord )
+            {
                 HFS_Folder record;
+            }
             else if( recordType == kHFSFileRecord )
+            {
                 HFS_File record;
+            }
         }
     }
     LittleEndian();
@@ -4027,9 +4122,13 @@ int64 HFS_LocalToDriveBlock( HFS_ForkData &fork, int64 localBlock )
     for( i = 0; i < 8; i++ )
     {
         if( localBlock < fork.extents[i].blockCount )
+        {
             return fork.extents[i].startBlock + localBlock;
+        }
         else
+        {
             localBlock -= fork.extents[i].blockCount;
+        }
     }
 
     // Not found - could look in the extents overflow in the future
@@ -4044,8 +4143,9 @@ int HFS_JumpToCatalogNode( int DriveNum, int NodeNum )
     local int64 pos <hidden=true>        = (int64)nodeSize * NodeNum;
     local int64 localBlock <hidden=true> = pos / blockSize;
     local int64 driveBlock <hidden=true> = HFS_LocalToDriveBlock( drive[DriveNum].header.catalogFile, localBlock );
-    if( driveBlock < 0 )
+    if( driveBlock < 0 ) {
         return false;
+    }
     FSeek( drive[DriveNum].DriveStart + driveBlock*blockSize );
     return true;
 }
@@ -4067,7 +4167,9 @@ typedef struct
 
     // Define the root node
     if( HFS_JumpToCatalogNode( DriveNum, headerNode.header.rootNode ) )
+    {
         HFS_BTNode rootNode;
+    }
 } HFS_Catalog <optimize=false>;
 
 // Define an HFS drive
@@ -4317,7 +4419,9 @@ int DriveAlreadyExists( int64 pos )
     for( i = 0; i < NumDrives; i++ )
     {
         if( startof(drive[i]) == pos )
+        {
             return true;
+        }
     }
     return false;
 }
@@ -4494,6 +4598,7 @@ if (!AutoDetectDriveResult)
     local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
     local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
     local FILE_SYSTEM_TYPE PreferredFS[4] = { FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE };
+
     for ( i=0; i<4; i++ )
     {
         // Check BootIndicator and SystemID
