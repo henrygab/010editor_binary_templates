@@ -1,0 +1,84 @@
+//------------------------------------------------
+//--- 010 Editor v9.0c Binary Template
+//
+//      File: ArrayOptimizationFailureExamples.bt
+//   Authors: HenryGab
+//   Version: 0.1
+//   Purpose: Show various ways that array optimization
+//            can have unintended (and silent) side-effects
+//  Category: Bugs
+// File Mask: *
+//  ID Bytes: 
+//   History: 
+//   0.1   Initial creation
+//------------------------------------------------
+
+// forward definitions
+struct FOO;   // 4 bytes
+struct BAR;   // size is based on first byte, Min 4 bytes, max 0x20 bytes
+struct BAZ;   // 
+struct FIZZ;
+
+int ReadFOO_IsValid( const FOO& f ) { return f.Value == 0x54414658; }
+
+typedef struct {
+    int Value;
+    // unsafe to optimize array…
+    // but at least causes compilation error ...
+    // type of "this" changes when instantiated as an optimized array
+    local int IsValid = ReadFOO_IsValid(this);  
+} FOO <optimize=false>;
+
+typedef struct {
+    int Value;
+    // SILENTLY unsafe to optimize array…
+    // IsValid will only be set based on first instance...
+    local int IsValid = (Value == 0x54414658);
+} BAR <optimize=false>;
+
+typedef struct {
+    unsigned char TotalBytes;
+    // SILENTLY unsafe to optimize array…
+    // only evaluated for first instance
+    local long pos = FTell();
+    // SILENTLY unsafe to optimize array…
+    // structure size is variable and depends on an instance value
+    // but may only evaluate for the first instance?
+    unsigned char extra[ 
+        (TotalBytes < 4) ? 3 :
+        (TotalBytes > 0x20) ? 0x1F :
+        (TotalBytes-1)
+        ]; 
+    // SILENTLY unsafe to optimize array…
+    // relies (indirectly) on instance value, but only evaluates for first instance
+    local long offset = FTell() - pos;
+} BAZ <optimize=false>;
+
+typedef struct {
+    int Value;
+    Printf("Value is %08Xh\r\n", Value);
+    // SILENTLY unsafe to optimize array…
+    // only evaluated for first instance
+    local long pos = FTell();
+} FIZZ <optimize=false>;
+
+local quad pos = 0; // start of exFAT formatted media
+
+// Correct: IsValid is false for [0], true for[1]
+FSeek(pos); FOO alpha; FOO alpha;
+
+// The following line causes a compilation error,
+// but gives the error line as within the struct,
+// making it difficult to track the root cause:
+//FSeek(pos); FOO beta[2] <optimize=true>;
+
+// Correct: IsValid is false for [0], true for[1]
+FSeek(pos); BAR gamma; BAR gamma;
+// Silent failure: IsValid is false [0], so all instances are false
+FSeek(pos); BAR delta[2] <optimize=true>; 
+
+pos = 0x6c; // start of exFAT partition + 0x6c == BytesPerSectorShift
+// Correct: [0] uses 0xC bytes, [1] uses 0x20 bytes
+FSeek(pos); BAZ epsilon; BAZ epsilon;
+// Silent failure: [0] uses 0xC bytes, so all instances use 0xC bytes
+FSeek(pos); BAZ zeta[2] <optimize=true>;
