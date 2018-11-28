@@ -1,10 +1,6 @@
 // TODO:
 // [ ] Update 'DetectedSectorSize' when creating any supported drive
-// [ ] Review all structs that have <optimize=false> attribute, and remove attribute when all of:
-//     1. No local variable depends on instance data (depending on parameter is OK)
-//     2. No use of the 'this', except for parentof(this) to get containing structure
-//     3. The variable is re-initialized during each instance's mapping (e.g., for (i=0; ....)
-//
+// [ ] Add hacks to prevent accidental optimized-array instantiations...
 // [ ] For a given section:
 // [ ] Forward-define all structures, with inline documentation on use.
 // [ ] Move all enums to top of file
@@ -330,7 +326,7 @@ typedef struct {
     UBYTE Part4[2];
     UBYTE Part5[6];
     if (was_big_endian) { BigEndian(); }
-} GUID <read=ReadGUID, write=WriteGUID, format=hex, optimize=false>; // Is it necessary to disable optimizations, to ensure little/big endian is properly restored?
+} GUID <read=ReadGUID, write=WriteGUID, format=hex>; // TODO - Determine if this is safe to optimize
 
 string ReadGUID( GUID &g )
 {
@@ -571,10 +567,11 @@ typedef struct
     wchar_t  Name[36];
 
     // Some partitions may have extra space at the end
+    // BUGBUG -- this tightly couples to caller; Better to have as a parameter to the struct?  But, it's OK for array optimizations...
     size = parentof(this).header.PartitionSize;
     if( size > 128 )
         UBYTE   Unused[ size - 128 ] <format=hex>;
-} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY, optimize=false>;
+} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>; // OK to optimize.
 
 // Show EFI partition name and EFI type beside the entry
 wstring ReadEFI_PARTITION_ENTRY( EFI_PARTITION_ENTRY &entry )
@@ -621,7 +618,7 @@ typedef struct
         // Create array of partitions
         if( count > 0 )
         {
-            EFI_PARTITION_ENTRY partitions[count];
+            EFI_PARTITION_ENTRY partitions[count]; // TODO - How to declare an array of structs that require a parameter?  pass in header.PartitionSize....
         }
     }
 
@@ -1663,8 +1660,8 @@ typedef struct (DWORD CountOfDataClusters)
 {
     Assert(CountOfDataClusters <= 4085);
 
-    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK?
-    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK?
+    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK
+    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK
 
     // BUGBUG - Must currently presume caller has NOT disabled bitfield padding
     // Sweetscape is considering exposing at least IsBitfieldPaddingEnabled(),
@@ -1698,7 +1695,7 @@ typedef struct (DWORD CountOfDataClusters)
     // However, that functionality does not yet exist as of v9.0c.
     BitfieldEnablePadding();
 
-} FAT12_FAT_TABLE <read=ReadFAT12_FAT_TABLE, optimize=false>;
+} FAT12_FAT_TABLE <read=ReadFAT12_FAT_TABLE>;
 
 string ReadFAT12_FAT_TABLE( FAT12_FAT_TABLE &fat_table )
 {
@@ -1726,8 +1723,8 @@ typedef struct (quad CountOfDataClusters)
 
 typedef struct (DWORD CountOfDataClusters)
 {
-    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK?
-    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK?
+    local DWORD count_of_data_clusters = CountOfDataClusters; // only depends on parameter, so optimize is OK
+    local DWORD i <hidden=true> = CountOfDataClusters+2;      // only depends on parameter, so optimize is OK
 
     // Per Sweetscape support, typedefs do not work with bitfields as of v9.0c.
     // Therefore, every usage will require the bitfield annotation (' : 28').
@@ -1748,7 +1745,7 @@ typedef struct (DWORD CountOfDataClusters)
         FAT32_CLUSTER_INFO Cluster : 28;
         i -= 1;
     }
-} FAT32_FAT_TABLE <read=ReadFAT32_FAT_TABLE, optimize=false>;
+} FAT32_FAT_TABLE <read=ReadFAT32_FAT_TABLE>;
 
 string ReadFAT32_FAT_TABLE( FAT32_FAT_TABLE &fat_table )
 {
@@ -1787,7 +1784,8 @@ typedef struct  {
     ULONG   NumHiddenSectors      <format=hex>; // legacy
     ULONG   NumberOfSectors32     <format=hex>; // must be non-zero for FAT32; must be >= 0x10000 if NumberOfSectors16 is zero
 
-    if (0 == this.SectorsPerFat16) { // FAT32 starting at sector offset 36
+    // PREVENTS ARRAY OPTIMIZATION because depends on instance value
+    if (0 == this.SectorsPerFat16) { // FAT32 starting at sector offset 36 
         DWORD SectorsPerFat32    <format=hex>;
         WORD  ActiveFatIndex : 4 <format=hex>; // zero-based index of the active FAT
         WORD  FlagsReserved1 : 3 <format=hex>; 
@@ -1807,11 +1805,12 @@ typedef struct  {
     CHAR   VolumeLabel[11]    <format=hex>; // only valid if ExtBootSignature == 0x29
     CHAR   FileSystemLabel[8] <format=hex>; // only valid if ExtBootSignature == 0x29
 
+    // PREVENTS ARRAY OPTIMIZATION
     tmp = 510 - (FTell() - startof(jmp)); // 420 for FAT32, 448 for FAT16/12
     UBYTE  BootCode[tmp]      <format=hex>;
     WORD   EndOfSectorMarker  <format=hex>;
 
-    // Helpers to make FAT12/16/32 more common
+    // Helpers to make FAT12/16/32 more common -- all of which prevent array optimization
     ClusterSize      = this.BytesPerSector * this.SectorsPerCluster;
     NumberOfSectors  = (this.NumberOfSectors16 != 0) ? this.NumberOfSectors16 : this.NumberOfSectors32;
     SectorsPerFat    = (this.SectorsPerFat16   != 0) ? this.SectorsPerFat16   : this.SectorsPerFat32;
@@ -2981,7 +2980,9 @@ typedef struct
 
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
+    {
         UBYTE   Stream[header.StreamLength];
+    }
     if( header.HasSubNode )
     {
         FSeek( start + header.IndexEntryLength - 8 );
@@ -2999,7 +3000,9 @@ typedef struct
 
     NTFS_ATTR_INDEX_ENTRY_HEADER header;
     if( !header.IsLastEntry && (header.StreamLength > 0) )
+    {
         NTFS_ATTR_FILE_NAME fileNameAttr;
+    }
     if( header.HasSubNode )
     {
         FSeek( start + header.IndexEntryLength - 8 );
@@ -3045,7 +3048,7 @@ typedef struct ( UQUAD maxPos )
     {
         NTFS_RUN run;
     }
-} NTFS_RUN_LIST;
+} NTFS_RUN_LIST <optimize=false>;
 
 // NTFS File Index
 typedef struct
