@@ -1,5 +1,4 @@
 // TODO:
-// [/] Move ***ALL*** variable declarations to top of function (avoid runtime bugs with multiple declarations)
 // [ ] Update 'DetectedSectorSize' when creating any supported drive
 // [ ] Review all structs that have <optimize=false> attribute, and remove attribute when all of:
 //     1. No local variable depends on instance data (depending on parameter is OK)
