@@ -18,7 +18,7 @@ typedef struct ( QUAD x ) {
 } FOO <optimize=false>;
 
 typedef struct ( QUAD t ) {
-    Assert(ReadUInt() == t); // WRONG ERROR REPORTED -- "*ERROR Line 21: Variable 't' is undefined."
+    Assert(0xDEADC0DECAFEF00D != t); // WRONG ERROR REPORTED -- "*ERROR Line 21: Variable 't' is undefined."
     quad value;
     FOO other_value(t);      // WRONG ERROR REPORTED -- "*ERROR Line 23: Variable 't' is undefined."
 } BAR <optimize=false,size=16>;
