@@ -1,0 +1,26 @@
+//------------------------------------------------
+//--- 010 Editor v9.0c Binary Template
+//
+//      File: SizeAttributePreventsStructureParameter.bt
+//   Authors: HenryGab
+//   Version: 0.2
+//   Purpose: Show various ways that array optimization
+//            can have unintended (and silent) side-effects
+//  Category: Bugs
+// File Mask: *
+//  ID Bytes: 
+//   History: 
+//   0.1   Initial creation
+//------------------------------------------------
+typedef struct ( QUAD x ) {
+    local quad parameter_value = x;
+    quad value;    
+} FOO <optimize=false>;
+
+typedef struct ( QUAD t ) {
+    Assert(ReadUInt() == t); // WRONG ERROR REPORTED -- "*ERROR Line 21: Variable 't' is undefined."
+    quad value;
+    FOO other_value(t);      // WRONG ERROR REPORTED -- "*ERROR Line 23: Variable 't' is undefined."
+} BAR <optimize=false,size=16>;
+
+BAR beta;
