@@ -1213,9 +1213,12 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         // and then determine what that next index value is...
         currentClusterIndex = fat_table.Cluster[currentClusterIndex];
     }
+    // Add one more extent to store the "end of chain" mark... mostly for debugging FAT chain
+    EXFAT_CLUSTER_INFO end_of_chain;
     // hack to avoid error that ending position was in front of starting position
     FSeek(start+4);
-} EXFAT_CHAINED_EXTENTS <optimize=false,size=4>; // cannot optimize because count of extents varies...
+
+} EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
 
 typedef enum <ubyte> {
     EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
