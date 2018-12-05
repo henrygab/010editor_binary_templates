@@ -4600,6 +4600,7 @@ if (!AutoDetectDriveResult)
     local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
     local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
     local FILE_SYSTEM_TYPE PreferredFS[4] = { FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE };
+    local quad tmpPartitionLocation;
 
     for ( i=0; i<4; i++ )
     {
@@ -4623,7 +4624,8 @@ if (!AutoDetectDriveResult)
 
             // Jump to Partition using boot_mbr structure definition of partition
             // BUGBUG-4kn -- magic required here to support 4k sectors
-            FSeek(boot_mbr.partitions[i].RelativeSector*(INT64)DefaultSectorSize);
+            tmpPartitionLocation = boot_mbr.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
+            FSeek(tmpPartitionLocation);
             
             // If the drive already exists (e.g., MBR+GPT both listing partitions)
             // then do not add the drive again
@@ -4633,6 +4635,7 @@ if (!AutoDetectDriveResult)
                 SystemID_AutoDetectDrive_Result[i] = AutoDetectDrive(SystemID[i]);
                 if(!SystemID_AutoDetectDrive_Result[i])
                 {
+                    FSeek(tmpPartitionLocation); // AutoDetectDrive() may have position-altering side effect....
                     DRIVE_NOT_SUPPORTED drive;
                 }
             }
@@ -4642,6 +4645,7 @@ if (!AutoDetectDriveResult)
     // Could not find MBR - drive is not supported
     if( !mbr_boot_ok )
     {
+        FSeek(0);
         DRIVE_NOT_SUPPORTED drive;
     }
 }
