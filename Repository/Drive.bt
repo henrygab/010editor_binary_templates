@@ -551,7 +551,7 @@ typedef struct
 {
     local int size <hidden=true>;
 
-    EFI_TYPE Type; // Use the first 4 bytes of the GUID to show the type
+    EFI_TYPE Type; // Use the first UInt32 of the GUID to show the type
     FSkip( -4 );
     GUID     TypeGUID;
     GUID     PartitionGUID;
@@ -1190,6 +1190,12 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     local quad start <hidden=true> = FTell();
     local quad filePosition <hidden=true> = -1;
     local DWORD TotalClusterCount = 0;
+    local DWORD index = 0;
+    local DWORD q;
+    local DWORD tortoise;
+    local DWORD hare;
+    local DWORD loopLength;
+    local DWORD loopStartIndex;
 
     Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
     Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value, *** even if not stored in the FAT table ***
@@ -1198,12 +1204,44 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     if (0 != contiguousClusters) {
         EXFAT_EXTENT extent(contiguousClusters);
         TotalClusterCount = contiguousClusters;
+        FSeek(start+4);
         return;
     }
 
     while (IsClusterIndexValidData(fat_table, currentClusterIndex)) {
         // keep it simple for now... non-contiguous just gets one entry for each one
         EXFAT_EXTENT extent(1);
+        
+        // Loop detection -- use tortoise and hare algorithm during the build to detect
+        if (1 == (index % 2)) {
+            if (extent[index].ClusterIndex == extent[index/2].ClusterIndex) {  // if hare == tortoise, a loop exists
+                // Detect size of the loop:
+                tortoise = index/2;
+                hare = tortoise + 1;
+                while (extent[tortoise].ClusterIndex != extent[hare].ClusterIndex) { hare++; }
+                loopLength = hare - tortoise;
+                    
+                // Detect start of the loop:
+                tortoise = 0;
+                hare = loopLength;
+                while (extent[tortoise].ClusterIndex != extent[hare].ClusterIndex) { hare++; tortoise++; }
+                loopStartIndex = tortoise;
+                // don't print more than needed...
+                index = loopStartIndex + loopLength + 1;
+
+                Printf("Loop detected in cluster chain:\r\n");
+                for (q = 0; q < loopStartIndex; q++) {
+                    Printf("%d -> ", extent[q].ClusterIndex);
+                }
+                Printf(" [[ ");
+                for (true; q < (index-1); q++) {
+                    Printf("%d -> ", extent[q].ClusterIndex);
+                }
+                Printf("%d ... ]]\r\n", extent[q].ClusterIndex);
+                FSeek(start+4);
+                return;
+            }
+        }
         this.TotalClusterCount += 1;
 
         // setup for the next item...
@@ -1216,6 +1254,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     // Add one more extent to store the "end of chain" mark... mostly for debugging FAT chain
     EXFAT_CLUSTER_INFO end_of_chain;
     // hack to avoid error that ending position was in front of starting position
+    // NOTE: THIS STRUCTURE SHOULD BE ABLE TO SPECIFY ATTRIBUTE <size=4>, but blocked by bug (as of v9.0c)
     FSeek(start+4);
 
 } EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
@@ -1381,10 +1420,14 @@ typedef struct {
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-// NEXT UP(1): Convert FILE_EXTENT to actual file data to show in the UI.
+// NEXT UP(1): Convert EXFAT_CHAINED_EXTENTS to actual file data to show in the UI.
 //             fn() to change from cluster index to file-position
 //             fn() to change from file-position to cluster index
 // NEXT UP(2): Interpret the file data for root directory as sequence of directory entries
+// TODO: function to convert from file position to cluster index
+// TODO: function to convert from cluster index to file position
+// TODO: function to update position in file, based on current position + `const EXFAT_CHAINED_EXTENTS& chain`
+// TODO: void ParseDirectory(const EXFAT_CHAINED_EXTENTS& chain, int driveIndex);
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
