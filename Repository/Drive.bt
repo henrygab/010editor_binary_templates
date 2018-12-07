@@ -1191,11 +1191,12 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     local quad filePosition <hidden=true> = -1;
     local DWORD TotalClusterCount = 0;
     local DWORD index = 0;
-    local DWORD q;
-    local DWORD tortoise;
-    local DWORD hare;
-    local DWORD loopLength;
-    local DWORD loopStartIndex;
+
+    local DWORD q;               // for loop detection
+    local DWORD tortoise;        // for loop detection
+    local DWORD hare;            // for loop detection
+    local DWORD loopLength;      // for loop detection
+    local DWORD loopStartIndex;  // for loop detection
 
     Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
     Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value, *** even if not stored in the FAT table ***
