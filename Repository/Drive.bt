@@ -748,6 +748,62 @@ typedef struct {
 // exFAT Drives -- Much information found in US patent 8321439
 //################################################################
 
+//================================================================
+// exFAT struct forward declarations
+//================================================================
+
+// Structures for the first 24 sectors on exFAT media (aka the two boot regions)
+struct EXFAT_BOOTSECTOR;                                              // boot region sector [0]
+struct EXFAT_BOOT_EXTENDED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [1..8]
+struct EXFAT_BOOT_OEM_PARAMETER_SECTOR;// (UBYTE BytesPerSectorShift);   // boot region sector [9]
+struct EXFAT_BOOT_RESERVED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [10]
+struct EXFAT_BOOT_CHECKSUM_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [11]
+struct EXFAT_BOOT_REGION;
+struct EXFAT_OEM_PARAMETER_TEMPLATE;   // for the EXFAT_BOOT_OEM_PARAMETER_SECTOR sector...
+struct EXFAT_OEM_FLASH_PARAMETER;      // for the EXFAT_BOOT_OEM_PARAMETER_SECTOR sector...
+
+// The FAT table follows the boot region
+struct EXFAT_FAT_TABLE;                // (quad CountOfDataClusters);
+
+// An extent is simply a wrapper around a cluster index with an associated count of clusters
+struct EXFAT_EXTENT;                   // (quad ClusterCount);
+
+// This structure can be instantiated in-place when the next four bytes in the file are read as the startingClusterIndex
+// When instantiated, it has the full list of the cluster indices for a given file / directory
+// When NoFactChain flag is set AND at least one cluster is allocated, callers should set contiguousClusters to non-zero
+// Callers should not instantiate this unless at least one cluster is allocated. 
+struct EXFAT_CHAINED_EXTENTS;          // (EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters);
+
+// Directory entries, each 32 bytes in length
+struct EXFAT_DIRENTRY_GENERIC;
+struct EXFAT_DIRENTRY_GENERIC_PRIMARY;
+struct EXFAT_DIRENTRY_GENERIC_SECONDARY;
+struct EXFAT_DIRENTRY_ALLOCATION_BITMAP;
+struct EXFAT_DIRENTRY_UPCASE_TABLE;
+struct EXFAT_DIRENTRY_VOLUME_LABEL;
+struct EXFAT_DIRENTRY_FILE;
+struct EXFAT_DIRENTRY_GENERIC_PRIMARYx;
+// struct EXFAT_DIRENTRY_FILE_STREAM
+// struct EXFAT_DIRENTRY_FILE_NAME
+struct EXFAT_DIRENTRY_VOLUME_GUID;
+// struct EXFAT_DIRENTRY_TEXFAT_PADDING
+// struct EXFAT_DIRENTRY_WINDOWSCE_ACL
+
+// Finally, the structure that pieces all the above together...
+struct EXFAT_DRIVE;
+
+
+//================================================================
+// exFAT enums
+//================================================================
+
+//================================================================
+// exFAT function forward declarations
+//================================================================
+
+
+
+
 local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
     0x00, 0x01, 0x02, 0x03,   0x04, 0x05, 0x06, 0x07, // Control codes
     0x08, 0x09, 0x0A, 0x0B,   0x0C, 0x0D, 0x0E, 0x0F, // Control codes
@@ -771,6 +827,7 @@ typedef struct {
     local boolean InternallyValid;
     local uint16  BytesPerSector    <format=hex>;
     local byte    SectorsPerCluster <format=hex>;
+    local uint32  BytesPerCluster   <format=hex>;
     local uint32  MaximumValidClusterNumber;
 
     InternallyValid = 0;
@@ -807,6 +864,8 @@ typedef struct {
         BytesPerSector    = 1 << BytesPerSectorShift;
         SectorsPerCluster = 1 << SectorsPerClusterShift;
         MaximumValidClusterNumber = CountOfDataClusters + 1;
+        BytesPerCluster   = BytesPerSector;
+        BytesPerCluster  *= SectorsPerCluster;
         if (BytesPerSector > DefaultSectorSize) {
             // ensure boot sector takes entire sector of data
             BYTE Undefined[BytesPerSector - DefaultSectorSize];
@@ -816,7 +875,7 @@ typedef struct {
 } EXFAT_BOOTSECTOR <optimize=false>;
 
 typedef struct (UBYTE BytesPerSectorShift) {
-    BYTE ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
+    BYTE  ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
     DWORD ExtendedBootSignature;
     local int InternallyValid = (ExtendedBootSignature == 0xAA550000); // TODO: remove this local variable entirely
 } EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
@@ -831,7 +890,7 @@ typedef struct {
     UBYTE CustomDefined[32];  // meaning depends upon the GUID
 } EXFAT_OEM_PARAMETER_TEMPLATE <read=ReadEXFAT_OEM_PARAMETER_TEMPLATE>;
 
-string ReadEXFAT_OEM_PARAMETER_TEMPLATE(EXFAT_OEM_PARAMETER_TEMPLATE &p) {
+string ReadEXFAT_OEM_PARAMETER_TEMPLATE(const EXFAT_OEM_PARAMETER_TEMPLATE &p) {
     return ReadGUID(p.ParameterGuid);
 }
 
@@ -911,7 +970,7 @@ typedef struct {
             Printf("EXFAT: Using previously detected sector size: %d\r\n", DetectedSectorSize);
             bps_shift = BytesPerSectorToBytesPerSectorShift(DetectedSectorSize);
         } else {
-            Printf("EXFAT: Using _presumed_ sector size: %d\r\n", DefaultSectorSize);
+            Printf("EXFAT: Using presumed sector size: %d\r\n", DefaultSectorSize);
             bps_shift = BytesPerSectorToBytesPerSectorShift(DefaultSectorSize);
         }
     }
@@ -1417,20 +1476,7 @@ typedef struct {
 
 
 
-// TODO: EXFAT_DIRENTRY_SET, which will also validate the EntrySetChecksum
 
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-// NEXT UP(1): Convert EXFAT_CHAINED_EXTENTS to actual file data to show in the UI.
-//             fn() to change from cluster index to file-position
-//             fn() to change from file-position to cluster index
-// NEXT UP(2): Interpret the file data for root directory as sequence of directory entries
-// TODO: function to convert from file position to cluster index
-// TODO: function to convert from cluster index to file position
-// TODO: function to update position in file, based on current position + `const EXFAT_CHAINED_EXTENTS& chain`
-// TODO: void ParseDirectory(const EXFAT_CHAINED_EXTENTS& chain, int driveIndex);
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 
 
@@ -1438,7 +1484,7 @@ typedef struct {
 typedef struct {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
     local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
-    local int i <hidden=true> = 0;
+    local int  i   <hidden=true> = 0;
     local quad pos <hidden=true>;
     local quad fatSectorOffsetInVolume <hidden=true>;
     local quad fatByteOffsetInVolume <hidden=true>;
@@ -1461,27 +1507,31 @@ typedef struct {
     }
     FsType = FILE_SYSTEM_TYPE_EXFAT;
 
-    for (i = 0; i < boot_region[idx].Boot.NumberOfFatTables; i++) {
-        fatSectorOffsetInVolume = boot_region[idx].Boot.FirstFatSectorOffset;
-        fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat * i;
+    // active is the second FAT only when there are two, and the active index is 1
+    fatSectorOffsetInVolume  = boot_region[idx].Boot.FirstFatSectorOffset;
+    if ((boot_region[idx].Boot.NumberOfFatTables == 2) && (boot_region[idx].Boot.VolumeFlags.ActiveFatIndex == 1)) {
+        fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat;
+    }
+    fatByteOffsetInVolume = fatSectorOffsetInVolume * boot_region[idx].Boot.BytesPerSector;
+    fatFilePosition = startof(this) + fatByteOffsetInVolume;
+    FSeek(fatFilePosition);
+    EXFAT_FAT_TABLE ActiveFat(boot_region[idx].Boot.CountOfDataClusters);
+
+    // If there are two FATs on the media, expose the second one also.
+    if (boot_region[idx].Boot.NumberOfFatTables == 2) {
+        fatSectorOffsetInVolume  = boot_region[idx].Boot.FirstFatSectorOffset;
+        if (boot_region[idx].Boot.VolumeFlags.ActiveFatIndex != 1) {
+            fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat;
+        }
         fatByteOffsetInVolume = fatSectorOffsetInVolume * boot_region[idx].Boot.BytesPerSector;
         fatFilePosition = startof(this) + fatByteOffsetInVolume;
         FSeek(fatFilePosition);
-        EXFAT_FAT_TABLE fat(boot_region[idx].Boot.CountOfDataClusters);
-        if (boot_region[idx].Boot.NumberOfFatTables == 1) {
-            // HACKHACK - force array indices on the variable 'fat' to allow
-            //            code to always access as fat[0] and fat[1], while
-            //            hiding the second one from the UI when it's not 'real'.
-            FSeek(fatFilePosition);
-            EXFAT_FAT_TABLE fat(boot_region[idx].Boot.CountOfDataClusters) <hidden=true>;
-        }
+        EXFAT_FAT_TABLE BackupFat(boot_region[idx].Boot.CountOfDataClusters);
     }
-
-    pos = FTell();
 
     FSeek( startof(boot_region[idx].Boot.RootClusterIndex) );
     EXFAT_CHAINED_EXTENTS root_extent(
-        fat[ boot_region[idx].Boot.VolumeFlags.ActiveFatIndex ],
+        ActiveFat,
         boot_region[idx].Boot.RootClusterIndex,
         0 // requires use of FAT Chain
         );
@@ -1512,8 +1562,23 @@ typedef struct {
     // 3. No more extents, so that's all there is.
 */
 
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// NEXT UP(1): Convert EXFAT_CHAINED_EXTENTS to actual file data to show in the UI.
+//             fn() to change from cluster index to file-position
+//             fn() to change from file-position to cluster index
+// NEXT UP(2): Interpret the file data for root directory as sequence of directory entries
+// TODO: function to convert from file position to cluster index
+// TODO: function to convert from cluster index to file position
+// TODO: function to update position in file, based on current position + `const EXFAT_CHAINED_EXTENTS& chain`
+// TODO: void ParseDirectory(const EXFAT_CHAINED_EXTENTS& chain, int driveIndex);
+// TODO: EXFAT_DIRENTRY_SET, which will also validate the EntrySetChecksum
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 } EXFAT_DRIVE <open=true, optimize=false, size=512>;
+
+
 
 
 
