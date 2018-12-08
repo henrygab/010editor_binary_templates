@@ -753,7 +753,7 @@ typedef struct {
 //================================================================
 
 // Structures for the first 24 sectors on exFAT media (aka the two boot regions)
-struct EXFAT_BOOTSECTOR;                                                 // boot region sector [0]
+struct EXFAT_BOOT_SECTOR;                                                 // boot region sector [0]
 struct EXFAT_BOOT_EXTENDED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [1..8]
 struct EXFAT_BOOT_OEM_PARAMETER_SECTOR;// (UBYTE BytesPerSectorShift);   // boot region sector [9]
 struct EXFAT_BOOT_RESERVED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [10]
@@ -796,6 +796,12 @@ struct EXFAT_DRIVE;
 //================================================================
 // exFAT enums
 //================================================================
+
+// Would prefer to have forward-definitions only at first....
+// enum <ulong> EXFAT_MEDIA_TYPE;
+// enum <ulong> EXFAT_CLUSTER_INFO;
+// enum <ubyte> EXFAT_DIRENTRY_TYPE;
+
 typedef enum <ulong>
 {
    EXFAT_MEDIA_HARD_DISK           = 0x0ffffff8,
@@ -810,50 +816,36 @@ typedef enum <ulong>
    EXFAT_CLUSTER_END_OF_CHAIN   = 0xFFFFFFFF
 } EXFAT_CLUSTER_INFO <read=ReadEXFAT_CLUSTER_INFO>;
 
-string ReadEXFAT_CLUSTER_INFO( EXFAT_CLUSTER_INFO &info )
-{
-    local string s = "";
-    if      (info == EXFAT_CLUSTER_INVALID0)     { s += "INVALID (00000000h)";      }
-    else if (info == EXFAT_CLUSTER_INVALID1)     { s += "INVALID (00000001h)";      }
-    else if (info == EXFAT_CLUSTER_BAD_CLUSTER)  { s += "BAD CLUSTER (FFFFFFF7h)";  }
-    else if (info == EXFAT_CLUSTER_END_OF_CHAIN) { s += "END_OF_CHAIN (FFFFFFFFh)"; }
-    else { SPrintf(s, "%d", info); } // print in decimal to make easier to manually follow FAT chains...
-    return s;
-}
-
 typedef enum <ubyte> {
-    EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
-    // values 0x01 .. 0x7F are not valid because high bit (used flag?) is clear
-    EXFAT_DIRENTRY_TYPE_INVALID = 0x80, // apparently invalid
-
-    // UBYTE TypeCode  : 5;
-    // UBYTE Benign    : 1; // aka Optional   xx1x_xxxx
-    // UBYTE Secondary : 1; // aka Continued  x1xx_xxxx
-    // UBYTE InUse     : 1; // aka Valid      1xxx_xxxx
-    
-    // critical primary are bitmask 100x_xxxx (8x,9x)
+    EXFAT_DIRENTRY_TYPE_END               = 0x00, // indicates end-of-directory, all later entries are to be ignored
+    EXFAT_DIRENTRY_TYPE_INVALID           = 0x80, // apparently invalid
     EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP = 0x81, // Secondary=0, Benign=0, TypeCode = 1
     EXFAT_DIRENTRY_TYPE_UPCASE_TABLE      = 0x82, // Secondary=0, Benign=0, TypeCode = 2
     EXFAT_DIRENTRY_TYPE_VOLUME_LABEL      = 0x83, // Secondary=0, Benign=0, TypeCode = 3
-    // ??? What is TypeCode == 4 ???
     EXFAT_DIRENTRY_TYPE_FILE              = 0x85, // Secondary=0, Benign=0, TypeCode = 5
-    // critical secondary are bitmask 101x_xxxx (Ax,Bx)
     EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xA0, // Secondary=1, Benign=0, TypeCode = 0
     EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xA1, // Secondary=1, Benign=0, TypeCode = 1
-    // benign primary are bitmask 110x_xxxx (Cx, Dx)
     EXFAT_DIRENTRY_TYPE_VOLUME_GUID       = 0xC0, // Secondary=0, Benign=1, TypeCode = 0
     EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING    = 0xC1, // Secondary=0, Benign=1, TypeCode = 1
     EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL     = 0xC2, // Secondary=0, Benign=1, TypeCode = 2
-    // benign secondary are bitmask 111x_xxxx (Ex, Fx)
-    // EXFAT_DIRENTRY_x = 0xE0, // q
-
 } EXFAT_DIRENTRY_TYPE;
 
 //================================================================
 // exFAT function forward declarations
 //================================================================
+string  ReadEXFAT_CLUSTER_INFO                 (const EXFAT_CLUSTER_INFO &info           );
+string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
+string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
+string  ReadEXFAT_BOOT_CHECKSUM_SECTOR         (const EXFAT_BOOT_CHECKSUM_SECTOR &sector );
+string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_region     );
 
 
+DWORD   CalculateExpectedExfatBootRegionChecksumUsingStartPosition (quad start, UBYTE BytesPerSectorShift);
+DWORD   CalculateExpectedExfatBootRegionChecksum                   (const EXFAT_BOOT_REGION &boot_region);
+boolean IsValidExfatBootExtendedSector                             (const EXFAT_BOOT_EXTENDED_SECTOR &s);
+boolean IsValidExfatBootSector                                     (const EXFAT_BOOT_SECTOR &boot);
+boolean IsValidExfatBootRegion                                     (const EXFAT_BOOT_REGION &boot_region);
+boolean IsValidClusterIndex                                        (const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex);
 
 
 local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
@@ -874,6 +866,18 @@ local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
     
     0x7C  // Vertical bar
 };
+
+string ReadEXFAT_CLUSTER_INFO( const EXFAT_CLUSTER_INFO &info )
+{
+    local string s = "";
+    if      (info == EXFAT_CLUSTER_INVALID0)     { s += "INVALID (00000000h)";      }
+    else if (info == EXFAT_CLUSTER_INVALID1)     { s += "INVALID (00000001h)";      }
+    else if (info == EXFAT_CLUSTER_BAD_CLUSTER)  { s += "BAD CLUSTER (FFFFFFF7h)";  }
+    else if (info == EXFAT_CLUSTER_END_OF_CHAIN) { s += "END_OF_CHAIN (FFFFFFFFh)"; }
+    else { SPrintf(s, "%d", info); } // print in decimal to make easier to manually follow FAT chains...
+    return s;
+}
+
 
 typedef struct {
     local boolean InternallyValid;
@@ -924,7 +928,7 @@ typedef struct {
         }
         InternallyValid = 1; // only set this after checked validity
     }
-} EXFAT_BOOTSECTOR <optimize=false>;
+} EXFAT_BOOT_SECTOR <optimize=false>;
 
 typedef struct (UBYTE BytesPerSectorShift) {
     BYTE  ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
@@ -932,7 +936,7 @@ typedef struct (UBYTE BytesPerSectorShift) {
     local int InternallyValid = (ExtendedBootSignature == 0xAA550000); // TODO: remove this local variable entirely
 } EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
 
-boolean ReadEXFAT_BOOT_EXTENDED_SECTOR_IsValid(const EXFAT_BOOT_EXTENDED_SECTOR & s)
+boolean IsValidExfatBootExtendedSector(const EXFAT_BOOT_EXTENDED_SECTOR & s)
 {
     return s.ExtendedBootSignature == 0xAA550000;
 }
@@ -999,7 +1003,7 @@ typedef struct (UBYTE BytesPerSectorShift) {
 
 } EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR, optimize=false>;
 
-string ReadEXFAT_BOOT_CHECKSUM_SECTOR( EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
+string ReadEXFAT_BOOT_CHECKSUM_SECTOR( const EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
     if (!sector.InternallyValid) { return "Invalid"; }
     string s = SPrintf(s, "Valid (%08Xh)", sector.Checksum[0]);
     return s;
@@ -1015,7 +1019,7 @@ typedef struct {
     start = FTell(); 
     InternallyValid = 0;
 
-    EXFAT_BOOTSECTOR Boot;
+    EXFAT_BOOT_SECTOR Boot;
     bps_shift = Boot.BytesPerSectorShift;
     if (9 > bps_shift || 12 < bps_shift) { // only support 512..4096 byte sectors
         if (0 != DetectedSectorSize) {
@@ -1035,8 +1039,7 @@ typedef struct {
 
 } EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
 
-
-string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
+string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
     local int i <hidden=true>;
     local string s <hidden=true>;
     local string result <hidden=true> = "";
@@ -1046,7 +1049,7 @@ string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
     }
     i = 0;
     while (exists(boot_region.ExtendedBoot[i])) {
-        if (!ReadEXFAT_BOOT_EXTENDED_SECTOR_IsValid(boot_region.ExtendedBoot[i])) {
+        if (!IsValidExfatBootExtendedSector(boot_region.ExtendedBoot[i])) {
             SPrintf(s, "Invalid (extended boot sector %d)\r\n", i);
             result += s;
         }
@@ -1065,8 +1068,7 @@ string ReadEXFAT_BOOT_REGION( EXFAT_BOOT_REGION &boot_region) {
     return result;
 }
 
-
-boolean IsValidExfatBootSector(const EXFAT_BOOTSECTOR &boot) {
+boolean IsValidExfatBootSector(const EXFAT_BOOT_SECTOR &boot) {
     // EXFAT specifies quite a bit...
     if (boot.EndOfSectorMarker != 0xAA55) { return false; }
 
@@ -1192,7 +1194,6 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
     return true;
 }
 
-
 DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_region) {
     return
         CalculateExpectedExfatBootRegionChecksumUsingStartPosition(
@@ -1242,22 +1243,16 @@ typedef struct ( QUAD ClusterCount ) {
     local QUAD  CountOfClusters = ClusterCount; // Not dependent on instance data, so OK to optimize
 } EXFAT_EXTENT;
 
-boolean IsClusterIndexValidData(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO clusterIndex)
+boolean IsValidClusterIndex(const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex)
 {
     return (clusterIndex >= 2 && clusterIndex <= fat_table.MaximumValidCluster);
-    if (clusterIndex == EXFAT_CLUSTER_INVALID0        ) return false; // invalid, but likely indicates zero-length file and coding error
+    if (clusterIndex == EXFAT_CLUSTER_INVALID0        ) return false; // invalid, may indicate zero-length file, and thus a coding error if used
     if (clusterIndex == EXFAT_CLUSTER_INVALID1        ) return false; // definitely invalid
     if (clusterIndex == EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
     if (clusterIndex == EXFAT_CLUSTER_END_OF_CHAIN    ) return false;
     if (clusterIndex >  EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
     if (clusterIndex >  fat_table.MaximumValidCluster ) return false;
     return true;
-}
-
-quad FilePositionForClusterIndexInFatTable(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO clusterIndex)
-{
-    Assert(IsClusterIndexValidData(fat_table, clusterIndex)); // starting cluster must always be valid data, else not create this!
-    return startof(fat_table.Cluster[clusterIndex]);
 }
 
 // Move the read position to the start of the given cluster
@@ -1271,7 +1266,6 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
 {
     local EXFAT_CLUSTER_INFO currentClusterIndex <hidden=true> = startingClusterIndex;
     local quad start <hidden=true> = FTell();
-    local quad filePosition <hidden=true> = -1;
     local DWORD TotalClusterCount = 0;
     local DWORD index = 0;
 
@@ -1281,7 +1275,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     local DWORD loopLength;      // for loop detection
     local DWORD loopStartIndex;  // for loop detection
 
-    Assert(IsClusterIndexValidData(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
+    Assert(IsValidClusterIndex(fat_table, startingClusterIndex)); // starting cluster must always be valid data, else not create this!
     Assert(ReadUInt() == startingClusterIndex); // startingClusterIndex must == current position value, *** even if not stored in the FAT table ***
 
     // handle easy case of contiguous file entry first (no fat entries needed)
@@ -1292,7 +1286,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         return;
     }
 
-    while (IsClusterIndexValidData(fat_table, currentClusterIndex)) {
+    while (IsValidClusterIndex(fat_table, currentClusterIndex)) {
         // keep it simple for now... non-contiguous just gets one entry for each one
         EXFAT_EXTENT extent(1);
         
@@ -1328,10 +1322,8 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         }
         this.TotalClusterCount += 1;
 
-        // setup for the next item...
-        // position is the current cluster index...
-        filePosition = FilePositionForClusterIndexInFatTable(fat_table, currentClusterIndex);
-        FSeek(filePosition);
+        // move file to that cluster index in the FAT...
+        FSeek(startof(fat_table.Cluster[currentClusterIndex]));
         // and then determine what that next index value is...
         currentClusterIndex = fat_table.Cluster[currentClusterIndex];
     }
@@ -1341,7 +1333,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
     // NOTE: THIS STRUCTURE SHOULD BE ABLE TO SPECIFY ATTRIBUTE <size=4>, but blocked by bug (as of v9.0c)
     FSeek(start+4);
 
-} EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
+} EXFAT_CHAINED_EXTENTS <optimize=false>; // struct jumps around the file, so does not support optimized array
 
 
 typedef struct {
@@ -4349,7 +4341,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
     // todo: add fs recognition code
     if (allowedTypes & FILE_SYSTEM_TYPE_EXFAT) {
         FSeek(startPos);
-        //Printf("FSREC      : ? EXFAT_BOOTSECTOR\r\n");
+        //Printf("FSREC      : ? EXFAT_BOOT_SECTOR\r\n");
         // exFAT requires at least 24 sectors just for FS recognition
         if (FileSize() - startPos < DefaultSectorSize * 24) {
             //Printf("FSREC      : exFAT volume too small\r\n");
