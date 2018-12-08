@@ -835,7 +835,6 @@ typedef enum <ubyte> {
 //================================================================
 string  ReadEXFAT_CLUSTER_INFO                 (const EXFAT_CLUSTER_INFO &info           );
 string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
-string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
 string  ReadEXFAT_BOOT_CHECKSUM_SECTOR         (const EXFAT_BOOT_CHECKSUM_SECTOR &sector );
 string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_region     );
 
@@ -848,6 +847,9 @@ boolean IsValidExfatBootRegion                                     (const EXFAT_
 boolean IsValidClusterIndex                                        (const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex);
 
 
+//================================================================
+// exFAT constants
+//================================================================
 local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
     0x00, 0x01, 0x02, 0x03,   0x04, 0x05, 0x06, 0x07, // Control codes
     0x08, 0x09, 0x0A, 0x0B,   0x0C, 0x0D, 0x0E, 0x0F, // Control codes
@@ -867,6 +869,14 @@ local const char EXFAT_INVALID_FILENAME_CHARACTERS[0x29] <hidden=true> = {
     0x7C  // Vertical bar
 };
 
+//================================================================
+// exFAT structure definitions
+//================================================================
+
+//================================================================
+// exFAT function implementations
+//================================================================
+
 string ReadEXFAT_CLUSTER_INFO( const EXFAT_CLUSTER_INFO &info )
 {
     local string s = "";
@@ -877,168 +887,14 @@ string ReadEXFAT_CLUSTER_INFO( const EXFAT_CLUSTER_INFO &info )
     else { SPrintf(s, "%d", info); } // print in decimal to make easier to manually follow FAT chains...
     return s;
 }
-
-
-typedef struct {
-    local boolean InternallyValid;
-    local uint16  BytesPerSector    <format=hex>;
-    local byte    SectorsPerCluster <format=hex>;
-    local uint32  BytesPerCluster   <format=hex>;
-    local uint32  MaximumValidClusterNumber;
-
-    InternallyValid = 0;
-    BYTE    jmp[3]                        <format=hex>;
-    CHAR    OemName[8];
-    BYTE    MustBeZero[53]                <format=hex>; // covers the FAT12/16/32 BPB area
-    uint64  NumHiddenSectors              <format=hex>; // aka sectors prior to this volume; ignored here; if non-zero, can be used during boot-strapping via INT 13h
-    uint64  NumberOfSectors               <format=hex>; // min: 2^20 / BytesPerSectorShift  max: 0xFFF..FF
-    uint32  FirstFatSectorOffset          <format=hex>; // volume sector offset to first FAT table  min: 24  max: complex ... 
-    uint32  SectorsPerFat                 <format=hex>; // sector count for each copy of FAT    min:  (ClusterCount+2)*4 / SectorSize, ***ROUNDED UP***   max: (ClusterHeapOffset - FatOffset) / NumberOfFatTables
-    uint32  DataAreaSectorOffset          <format=hex>; // volume sector offset to first data cluster
-    uint32  CountOfDataClusters           <format=hex>; // stored directly in the BPB, at last!
-    uint32  RootClusterIndex              <format=hex>; // first cluster, then follow FAT chain...
-    uint32  VolumeSerialNumber            <format=hex>; // all values are valid
-    byte    FileSystemRevisionMinor       <format=hex>;
-    byte    FileSystemRevisionMajor       <format=hex>;
-    struct {
-        uint16  ActiveFatIndex   :  1;                  // zero-based index of the active FAT
-        uint16  IsVolumeDirty    :  1;                  // if non-zero, volume dismounted unexpectedly
-        uint16  MediaError       :  1;                  // a cluster not marked as "bad" in FAT may be marginal or fail reads/writes
-        uint16  ClearToZero      : 13;                  // set to zero before modifying file system volume
-    } VolumeFlags;
-    byte    BytesPerSectorShift           <format=hex>; // min: 9 (512 bytes), max: 12 (4096 bytes)
-    byte    SectorsPerClusterShift        <format=hex>; // min: 0 (1 sector/cluster), max: 25 - BytesPerSectorShift (32MB)
-    byte    NumberOfFatTables             <format=hex>; // min: 1, max: 2
-    byte    DriveNumber                   <format=hex>; // ignored here; can be used during boot-strapping via INT 13h
-    byte    PercentInUse                  <format=hex>; // min: 0, max: 100 -OR- exactly 0xFF
-    byte    Reserved[7]                   <format=hex>; 
-    BYTE    BootCode[390]                 <format=hex>;
-    uint16  EndOfSectorMarker             <format=hex>;
-
-    if (IsValidExfatBootSector(this)) {
-        // and some fields whose sole purpose is simplify (duck-typing) usage by common FAT12/16/32 and exFAT code
-        BytesPerSector    = 1 << BytesPerSectorShift;
-        SectorsPerCluster = 1 << SectorsPerClusterShift;
-        MaximumValidClusterNumber = CountOfDataClusters + 1;
-        BytesPerCluster   = BytesPerSector;
-        BytesPerCluster  *= SectorsPerCluster;
-        if (BytesPerSector > DefaultSectorSize) {
-            // ensure boot sector takes entire sector of data
-            BYTE Undefined[BytesPerSector - DefaultSectorSize];
-        }
-        InternallyValid = 1; // only set this after checked validity
-    }
-} EXFAT_BOOT_SECTOR <optimize=false>;
-
-typedef struct (UBYTE BytesPerSectorShift) {
-    BYTE  ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
-    DWORD ExtendedBootSignature;
-    local int InternallyValid = (ExtendedBootSignature == 0xAA550000); // TODO: remove this local variable entirely
-} EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
-
-boolean IsValidExfatBootExtendedSector(const EXFAT_BOOT_EXTENDED_SECTOR & s)
-{
-    return s.ExtendedBootSignature == 0xAA550000;
-}
-
-typedef struct {
-    GUID ParameterGuid;
-    UBYTE CustomDefined[32];  // meaning depends upon the GUID
-} EXFAT_OEM_PARAMETER_TEMPLATE <read=ReadEXFAT_OEM_PARAMETER_TEMPLATE>;
-
 string ReadEXFAT_OEM_PARAMETER_TEMPLATE(const EXFAT_OEM_PARAMETER_TEMPLATE &p) {
     return ReadGUID(p.ParameterGuid);
 }
-
-// OEM Flash Parameters from: http://www.ntfs.com/exfat-overview.htm
-typedef struct {
-    GUID   ParameterGuid;       // {0A0C7E46-3399-4021-90C8-FA6D389C4BA2}
-    UINT32 EraseBlockSize;      // erase block size in bytes
-    UINT32 PageSize;            // ??? what page type ???
-    UINT32 NumberOfSpareBlocks; // ??? count in units of EraseBlockSize or PageSize or ???
-    UINT32 tRandomAccess_ns;    // Random access time in nanoseconds
-    UINT32 tProgram_ns;         // Program time in nanoseconds
-    UINT32 tReadCycle_ns;       // Serial Read cycle time in nanoseconds
-    UINT32 tWriteCycle_ns;      // Write cycle time in nanoseconds
-    UBYTE  Reserved[4];
-} EXFAT_OEM_FLASH_PARAMETER;
-
-typedef struct (UBYTE BytesPerSectorShift) {
-    local DWORD bytesPerSector <hidden=true> = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
-    local int i <hidden=true>;
-    local quad start <hidden=true> = FTell(); // oops!  prevents array optimization ... but not needed for this sector anyways
-
-    for (i = 0; i < 10; i++) {
-        Assert( FTell() - start == 48*i );
-        // TODO: read-ahead the GUID of the EXFAT_OEM_PARAMETER_TEMPLATE, and based on its value,
-        //       instantiate pre-defined types.  There's only one type at the moment...
-        EXFAT_OEM_PARAMETER_TEMPLATE Parameter;
-    }
-    Assert( FTell() - start == 480 ); // oops! prevents array optimization ... but not needed for this sector anyways
-    UBYTE Reserved[ bytesPerSector - 480 ];    
-} EXFAT_BOOT_OEM_PARAMETER_SECTOR <optimize=false>;
-
-typedef struct (UBYTE BytesPerSectorShift) {
-    UBYTE Reserved[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) ];
-} EXFAT_BOOT_RESERVED_SECTOR;
-
-typedef struct (UBYTE BytesPerSectorShift) {
-    local boolean InternallyValid;            // prevents array optimization ... but not needed for this sector anyways
-    local quad start;                         // prevents array optimization ... but not needed for this sector anyways
-    local DWORD checksumCopies <hidden=true>; // ok for optimization, as does not depend on instance data
-    local DWORD i <hidden=true>;              // ok for optimization, as does not depend on instance data
-
-
-    InternallyValid = 1;
-    start = FTell();
-    checksumCopies = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) / 4;
-    
-    DWORD Checksum[checksumCopies];    
-    for (i = 0; InternallyValid && i < checksumCopies; i++) {
-        if (Checksum[0] != Checksum[i]) {
-            Printf("INVALID EXFAT (%08Xh): Checksum sector value differs at index %xh, value %08Xh != %08Xh\r\n", start, i, Checksum[0], Checksum[i]);
-            InternallyValid = 0;
-        }
-    }
-
-} EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR, optimize=false>;
-
 string ReadEXFAT_BOOT_CHECKSUM_SECTOR( const EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
     if (!sector.InternallyValid) { return "Invalid"; }
     string s = SPrintf(s, "Valid (%08Xh)", sector.Checksum[0]);
     return s;
 }
-
-
-typedef struct {
-    local quad start;               // prevents array optimization
-    local DWORD bps_shift;          // prevents array optimization
-    local boolean InternallyValid;  // prevents array optimization
-    local DWORD i <hidden=true>;
-
-    start = FTell(); 
-    InternallyValid = 0;
-
-    EXFAT_BOOT_SECTOR Boot;
-    bps_shift = Boot.BytesPerSectorShift;
-    if (9 > bps_shift || 12 < bps_shift) { // only support 512..4096 byte sectors
-        if (0 != DetectedSectorSize) {
-            Printf("EXFAT: Using previously detected sector size: %d\r\n", DetectedSectorSize);
-            bps_shift = BytesPerSectorToBytesPerSectorShift(DetectedSectorSize);
-        } else {
-            Printf("EXFAT: Using presumed sector size: %d\r\n", DefaultSectorSize);
-            bps_shift = BytesPerSectorToBytesPerSectorShift(DefaultSectorSize);
-        }
-    }
-    for (i = 0; i < 8; i++) {
-        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(bps_shift);
-    }
-    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(bps_shift); // no validation here
-    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(bps_shift);     // no validation here
-    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(bps_shift);
-
-} EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
-
 string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
     local int i <hidden=true>;
     local string s <hidden=true>;
@@ -1067,7 +923,10 @@ string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
     }
     return result;
 }
-
+boolean IsValidExfatBootExtendedSector(const EXFAT_BOOT_EXTENDED_SECTOR & s)
+{
+    return s.ExtendedBootSignature == 0xAA550000;
+}
 boolean IsValidExfatBootSector(const EXFAT_BOOT_SECTOR &boot) {
     // EXFAT specifies quite a bit...
     if (boot.EndOfSectorMarker != 0xAA55) { return false; }
@@ -1154,7 +1013,6 @@ boolean IsValidExfatBootSector(const EXFAT_BOOT_SECTOR &boot) {
     Assert(boot.OemName == "EXFAT   ");
     return true;
 }
-
 boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
 
     local int i;
@@ -1193,15 +1051,17 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
     Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
     return true;
 }
-
-DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_region) {
-    return
-        CalculateExpectedExfatBootRegionChecksumUsingStartPosition(
-            startof(boot_region),
-            boot_region.Boot.BytesPerSectorShift
-            );
+boolean IsValidClusterIndex(const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex)
+{
+    return (clusterIndex >= 2 && clusterIndex <= fat_table.MaximumValidCluster);
+    if (clusterIndex == EXFAT_CLUSTER_INVALID0        ) return false; // invalid, may indicate zero-length file, and thus a coding error if used
+    if (clusterIndex == EXFAT_CLUSTER_INVALID1        ) return false; // definitely invalid
+    if (clusterIndex == EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
+    if (clusterIndex == EXFAT_CLUSTER_END_OF_CHAIN    ) return false;
+    if (clusterIndex >  EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
+    if (clusterIndex >  fat_table.MaximumValidCluster ) return false;
+    return true;
 }
-
 DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBYTE BytesPerSectorShift) {
     
     //Printf("EXFAT (%08Xh): Calculating checksum with %d bytes per sector shift\r\n", start, BytesPerSectorShift);
@@ -1222,6 +1082,163 @@ DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBY
     }
     return checksum;
 }
+DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_region) {
+    return
+        CalculateExpectedExfatBootRegionChecksumUsingStartPosition(
+            startof(boot_region),
+            boot_region.Boot.BytesPerSectorShift
+            );
+}
+
+//================================================================
+// exFAT -- Unorganized from here on out   :-)
+//================================================================
+
+typedef struct {
+    local boolean InternallyValid;
+    local uint16  BytesPerSector    <format=hex>;
+    local byte    SectorsPerCluster <format=hex>;
+    local uint32  BytesPerCluster   <format=hex>;
+    local uint32  MaximumValidClusterNumber;
+
+    InternallyValid = 0;
+    BYTE    jmp[3]                        <format=hex>;
+    CHAR    OemName[8];
+    BYTE    MustBeZero[53]                <format=hex>; // covers the FAT12/16/32 BPB area
+    uint64  NumHiddenSectors              <format=hex>; // aka sectors prior to this volume; ignored here; if non-zero, can be used during boot-strapping via INT 13h
+    uint64  NumberOfSectors               <format=hex>; // min: 2^20 / BytesPerSectorShift  max: 0xFFF..FF
+    uint32  FirstFatSectorOffset          <format=hex>; // volume sector offset to first FAT table  min: 24  max: complex ... 
+    uint32  SectorsPerFat                 <format=hex>; // sector count for each copy of FAT    min:  (ClusterCount+2)*4 / SectorSize, ***ROUNDED UP***   max: (ClusterHeapOffset - FatOffset) / NumberOfFatTables
+    uint32  DataAreaSectorOffset          <format=hex>; // volume sector offset to first data cluster
+    uint32  CountOfDataClusters           <format=hex>; // stored directly in the BPB, at last!
+    uint32  RootClusterIndex              <format=hex>; // first cluster, then follow FAT chain...
+    uint32  VolumeSerialNumber            <format=hex>; // all values are valid
+    byte    FileSystemRevisionMinor       <format=hex>;
+    byte    FileSystemRevisionMajor       <format=hex>;
+    struct {
+        uint16  ActiveFatIndex   :  1;                  // zero-based index of the active FAT
+        uint16  IsVolumeDirty    :  1;                  // if non-zero, volume dismounted unexpectedly
+        uint16  MediaError       :  1;                  // a cluster not marked as "bad" in FAT may be marginal or fail reads/writes
+        uint16  ClearToZero      : 13;                  // set to zero before modifying file system volume
+    } VolumeFlags;
+    byte    BytesPerSectorShift           <format=hex>; // min: 9 (512 bytes), max: 12 (4096 bytes)
+    byte    SectorsPerClusterShift        <format=hex>; // min: 0 (1 sector/cluster), max: 25 - BytesPerSectorShift (32MB)
+    byte    NumberOfFatTables             <format=hex>; // min: 1, max: 2
+    byte    DriveNumber                   <format=hex>; // ignored here; can be used during boot-strapping via INT 13h
+    byte    PercentInUse                  <format=hex>; // min: 0, max: 100 -OR- exactly 0xFF
+    byte    Reserved[7]                   <format=hex>; 
+    BYTE    BootCode[390]                 <format=hex>;
+    uint16  EndOfSectorMarker             <format=hex>;
+
+    if (IsValidExfatBootSector(this)) {
+        // and some fields whose sole purpose is simplify (duck-typing) usage by common FAT12/16/32 and exFAT code
+        BytesPerSector    = 1 << BytesPerSectorShift;
+        SectorsPerCluster = 1 << SectorsPerClusterShift;
+        MaximumValidClusterNumber = CountOfDataClusters + 1;
+        BytesPerCluster   = BytesPerSector;
+        BytesPerCluster  *= SectorsPerCluster;
+        if (BytesPerSector > DefaultSectorSize) {
+            // ensure boot sector takes entire sector of data
+            BYTE Undefined[BytesPerSector - DefaultSectorSize];
+        }
+        InternallyValid = 1; // only set this after checked validity
+    }
+} EXFAT_BOOT_SECTOR <optimize=false>;
+
+typedef struct (UBYTE BytesPerSectorShift) {
+    BYTE  ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
+    DWORD ExtendedBootSignature;
+    local int InternallyValid = (ExtendedBootSignature == 0xAA550000); // TODO: remove this local variable entirely
+} EXFAT_BOOT_EXTENDED_SECTOR <optimize=false>;
+
+
+typedef struct {
+    GUID ParameterGuid;
+    UBYTE CustomDefined[32];  // meaning depends upon the GUID
+} EXFAT_OEM_PARAMETER_TEMPLATE <read=ReadEXFAT_OEM_PARAMETER_TEMPLATE>;
+
+
+// OEM Flash Parameters from: http://www.ntfs.com/exfat-overview.htm
+typedef struct {
+    GUID   ParameterGuid;       // {0A0C7E46-3399-4021-90C8-FA6D389C4BA2}
+    UINT32 EraseBlockSize;      // erase block size in bytes
+    UINT32 PageSize;            // ??? what page type ???
+    UINT32 NumberOfSpareBlocks; // ??? count in units of EraseBlockSize or PageSize or ???
+    UINT32 tRandomAccess_ns;    // Random access time in nanoseconds
+    UINT32 tProgram_ns;         // Program time in nanoseconds
+    UINT32 tReadCycle_ns;       // Serial Read cycle time in nanoseconds
+    UINT32 tWriteCycle_ns;      // Write cycle time in nanoseconds
+    UBYTE  Reserved[4];
+} EXFAT_OEM_FLASH_PARAMETER;
+
+typedef struct (UBYTE BytesPerSectorShift) {
+    local DWORD bytesPerSector <hidden=true> = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
+    local int i <hidden=true>;
+    local quad start <hidden=true> = FTell(); // oops!  prevents array optimization ... but not needed for this sector anyways
+
+    for (i = 0; i < 10; i++) {
+        Assert( FTell() - start == 48*i );
+        // TODO: read-ahead the GUID of the EXFAT_OEM_PARAMETER_TEMPLATE, and based on its value,
+        //       instantiate pre-defined types.  There's only one type at the moment...
+        EXFAT_OEM_PARAMETER_TEMPLATE Parameter;
+    }
+    Assert( FTell() - start == 480 ); // oops! prevents array optimization ... but not needed for this sector anyways
+    UBYTE Reserved[ bytesPerSector - 480 ];    
+} EXFAT_BOOT_OEM_PARAMETER_SECTOR <optimize=false>;
+
+typedef struct (UBYTE BytesPerSectorShift) {
+    UBYTE Reserved[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) ];
+} EXFAT_BOOT_RESERVED_SECTOR;
+
+typedef struct (UBYTE BytesPerSectorShift) {
+    local boolean InternallyValid;            // prevents array optimization ... but not needed for this sector anyways
+    local quad start;                         // prevents array optimization ... but not needed for this sector anyways
+    local DWORD checksumCopies <hidden=true>; // ok for optimization, as does not depend on instance data
+    local DWORD i <hidden=true>;              // ok for optimization, as does not depend on instance data
+
+
+    InternallyValid = 1;
+    start = FTell();
+    checksumCopies = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) / 4;
+    
+    DWORD Checksum[checksumCopies];    
+    for (i = 0; InternallyValid && i < checksumCopies; i++) {
+        if (Checksum[0] != Checksum[i]) {
+            Printf("INVALID EXFAT (%08Xh): Checksum sector value differs at index %xh, value %08Xh != %08Xh\r\n", start, i, Checksum[0], Checksum[i]);
+            InternallyValid = 0;
+        }
+    }
+
+} EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR, optimize=false>;
+
+typedef struct {
+    local quad start;               // prevents array optimization
+    local DWORD bps_shift;          // prevents array optimization
+    local boolean InternallyValid;  // prevents array optimization
+    local DWORD i <hidden=true>;
+
+    start = FTell(); 
+    InternallyValid = 0;
+
+    EXFAT_BOOT_SECTOR Boot;
+    bps_shift = Boot.BytesPerSectorShift;
+    if (9 > bps_shift || 12 < bps_shift) { // only support 512..4096 byte sectors
+        if (0 != DetectedSectorSize) {
+            Printf("EXFAT: Using previously detected sector size: %d\r\n", DetectedSectorSize);
+            bps_shift = BytesPerSectorToBytesPerSectorShift(DetectedSectorSize);
+        } else {
+            Printf("EXFAT: Using presumed sector size: %d\r\n", DefaultSectorSize);
+            bps_shift = BytesPerSectorToBytesPerSectorShift(DefaultSectorSize);
+        }
+    }
+    for (i = 0; i < 8; i++) {
+        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(bps_shift);
+    }
+    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(bps_shift); // no validation here
+    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(bps_shift);     // no validation here
+    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(bps_shift);
+
+} EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>;
 
 
 
@@ -1243,17 +1260,6 @@ typedef struct ( QUAD ClusterCount ) {
     local QUAD  CountOfClusters = ClusterCount; // Not dependent on instance data, so OK to optimize
 } EXFAT_EXTENT;
 
-boolean IsValidClusterIndex(const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex)
-{
-    return (clusterIndex >= 2 && clusterIndex <= fat_table.MaximumValidCluster);
-    if (clusterIndex == EXFAT_CLUSTER_INVALID0        ) return false; // invalid, may indicate zero-length file, and thus a coding error if used
-    if (clusterIndex == EXFAT_CLUSTER_INVALID1        ) return false; // definitely invalid
-    if (clusterIndex == EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
-    if (clusterIndex == EXFAT_CLUSTER_END_OF_CHAIN    ) return false;
-    if (clusterIndex >  EXFAT_CLUSTER_BAD_CLUSTER     ) return false;
-    if (clusterIndex >  fat_table.MaximumValidCluster ) return false;
-    return true;
-}
 
 // Move the read position to the start of the given cluster
 //void EXFAT_JumpToClusterIndex( DWORD clusterIndex, int DriveNum )
