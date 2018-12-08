@@ -753,7 +753,7 @@ typedef struct {
 //================================================================
 
 // Structures for the first 24 sectors on exFAT media (aka the two boot regions)
-struct EXFAT_BOOTSECTOR;                                              // boot region sector [0]
+struct EXFAT_BOOTSECTOR;                                                 // boot region sector [0]
 struct EXFAT_BOOT_EXTENDED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [1..8]
 struct EXFAT_BOOT_OEM_PARAMETER_SECTOR;// (UBYTE BytesPerSectorShift);   // boot region sector [9]
 struct EXFAT_BOOT_RESERVED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [10]
@@ -796,6 +796,58 @@ struct EXFAT_DRIVE;
 //================================================================
 // exFAT enums
 //================================================================
+typedef enum <ulong>
+{
+   EXFAT_MEDIA_HARD_DISK           = 0x0ffffff8,
+   EXFAT_MEDIA_FLOPPY_DISK         = 0x0ffffff0
+} EXFAT_MEDIA_TYPE <format=hex>;
+
+typedef enum <ulong>
+{
+   EXFAT_CLUSTER_INVALID0       = 0x00000000,
+   EXFAT_CLUSTER_INVALID1       = 0x00000001,
+   EXFAT_CLUSTER_BAD_CLUSTER    = 0xFFFFFFF7,
+   EXFAT_CLUSTER_END_OF_CHAIN   = 0xFFFFFFFF
+} EXFAT_CLUSTER_INFO <read=ReadEXFAT_CLUSTER_INFO>;
+
+string ReadEXFAT_CLUSTER_INFO( EXFAT_CLUSTER_INFO &info )
+{
+    local string s = "";
+    if      (info == EXFAT_CLUSTER_INVALID0)     { s += "INVALID (00000000h)";      }
+    else if (info == EXFAT_CLUSTER_INVALID1)     { s += "INVALID (00000001h)";      }
+    else if (info == EXFAT_CLUSTER_BAD_CLUSTER)  { s += "BAD CLUSTER (FFFFFFF7h)";  }
+    else if (info == EXFAT_CLUSTER_END_OF_CHAIN) { s += "END_OF_CHAIN (FFFFFFFFh)"; }
+    else { SPrintf(s, "%d", info); } // print in decimal to make easier to manually follow FAT chains...
+    return s;
+}
+
+typedef enum <ubyte> {
+    EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
+    // values 0x01 .. 0x7F are not valid because high bit (used flag?) is clear
+    EXFAT_DIRENTRY_TYPE_INVALID = 0x80, // apparently invalid
+
+    // UBYTE TypeCode  : 5;
+    // UBYTE Benign    : 1; // aka Optional   xx1x_xxxx
+    // UBYTE Secondary : 1; // aka Continued  x1xx_xxxx
+    // UBYTE InUse     : 1; // aka Valid      1xxx_xxxx
+    
+    // critical primary are bitmask 100x_xxxx (8x,9x)
+    EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP = 0x81, // Secondary=0, Benign=0, TypeCode = 1
+    EXFAT_DIRENTRY_TYPE_UPCASE_TABLE      = 0x82, // Secondary=0, Benign=0, TypeCode = 2
+    EXFAT_DIRENTRY_TYPE_VOLUME_LABEL      = 0x83, // Secondary=0, Benign=0, TypeCode = 3
+    // ??? What is TypeCode == 4 ???
+    EXFAT_DIRENTRY_TYPE_FILE              = 0x85, // Secondary=0, Benign=0, TypeCode = 5
+    // critical secondary are bitmask 101x_xxxx (Ax,Bx)
+    EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xA0, // Secondary=1, Benign=0, TypeCode = 0
+    EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xA1, // Secondary=1, Benign=0, TypeCode = 1
+    // benign primary are bitmask 110x_xxxx (Cx, Dx)
+    EXFAT_DIRENTRY_TYPE_VOLUME_GUID       = 0xC0, // Secondary=0, Benign=1, TypeCode = 0
+    EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING    = 0xC1, // Secondary=0, Benign=1, TypeCode = 1
+    EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL     = 0xC2, // Secondary=0, Benign=1, TypeCode = 2
+    // benign secondary are bitmask 111x_xxxx (Ex, Fx)
+    // EXFAT_DIRENTRY_x = 0xE0, // q
+
+} EXFAT_DIRENTRY_TYPE;
 
 //================================================================
 // exFAT function forward declarations
@@ -1170,36 +1222,8 @@ DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBY
     return checksum;
 }
 
-typedef enum <ulong>
-{
-   EXFAT_MEDIA_HARD_DISK           = 0x0ffffff8,
-   EXFAT_MEDIA_FLOPPY_DISK         = 0x0ffffff0
-} EXFAT_MEDIA_TYPE <format=hex>;
 
-typedef enum <ulong>
-{
-   EXFAT_CLUSTER_INVALID0       = 0x00000000,
-   EXFAT_CLUSTER_INVALID1       = 0x00000001,
-   EXFAT_CLUSTER_BAD_CLUSTER    = 0xFFFFFFF7,
-   EXFAT_CLUSTER_END_OF_CHAIN   = 0xFFFFFFFF
-} EXFAT_CLUSTER_INFO <read=ReadEXFAT_CLUSTER_INFO>;
 
-string ReadEXFAT_CLUSTER_INFO( EXFAT_CLUSTER_INFO &info )
-{
-    local string s = "";
-    if (info == EXFAT_CLUSTER_INVALID0) {
-        s += "INVALID (00000000h)";
-    } else if (info == EXFAT_CLUSTER_INVALID1) {
-        s += "INVALID (00000001h)";
-    } else if (info == EXFAT_CLUSTER_BAD_CLUSTER) {
-        s += "BAD CLUSTER (FFFFFFF7h)";
-    } else if (info == EXFAT_CLUSTER_END_OF_CHAIN) {
-        s += "END_OF_CHAIN (FFFFFFFFh)";
-    } else {
-        SPrintf(s, "%d", info); // print in decimal to make easier to manually follow FAT chains...
-    }
-    return s;
-}
 
 typedef struct (quad CountOfDataClusters)
 {
@@ -1319,33 +1343,6 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
 
 } EXFAT_CHAINED_EXTENTS <optimize=false>; // cannot optimize because count of extents varies...
 
-typedef enum <ubyte> {
-    EXFAT_DIRENTRY_TYPE_END     = 0x00, // indicates end-of-directory, all later entries are to be ignored
-    // values 0x01 .. 0x7F are not valid because high bit (used flag?) is clear
-    EXFAT_DIRENTRY_TYPE_INVALID = 0x80, // apparently invalid
-
-    // UBYTE TypeCode  : 5;
-    // UBYTE Benign    : 1; // aka Optional   xx1x_xxxx
-    // UBYTE Secondary : 1; // aka Continued  x1xx_xxxx
-    // UBYTE InUse     : 1; // aka Valid      1xxx_xxxx
-    
-    // critical primary are bitmask 100x_xxxx (8x,9x)
-    EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP = 0x81, // Secondary=0, Benign=0, TypeCode = 1
-    EXFAT_DIRENTRY_TYPE_UPCASE_TABLE      = 0x82, // Secondary=0, Benign=0, TypeCode = 2
-    EXFAT_DIRENTRY_TYPE_VOLUME_LABEL      = 0x83, // Secondary=0, Benign=0, TypeCode = 3
-    // ??? What is TypeCode == 4 ???
-    EXFAT_DIRENTRY_TYPE_FILE              = 0x85, // Secondary=0, Benign=0, TypeCode = 5
-    // critical secondary are bitmask 101x_xxxx (Ax,Bx)
-    EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xA0, // Secondary=1, Benign=0, TypeCode = 0
-    EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xA1, // Secondary=1, Benign=0, TypeCode = 1
-    // benign primary are bitmask 110x_xxxx (Cx, Dx)
-    EXFAT_DIRENTRY_TYPE_VOLUME_GUID       = 0xC0, // Secondary=0, Benign=1, TypeCode = 0
-    EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING    = 0xC1, // Secondary=0, Benign=1, TypeCode = 1
-    EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL     = 0xC2, // Secondary=0, Benign=1, TypeCode = 2
-    // benign secondary are bitmask 111x_xxxx (Ex, Fx)
-    // EXFAT_DIRENTRY_x = 0xE0, // q
-
-} EXFAT_DIRENTRY_TYPE;
 
 typedef struct {
     union {
