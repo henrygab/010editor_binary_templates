@@ -1,0 +1,32 @@
+//------------------------------------------------
+//--- 010 Editor v9.0.1 Binary Template
+//
+//      File: UnionParameterLost.bt
+//   Authors: HenryGab
+//   Version: 0.1
+//   Purpose: Show a fairly minimal bug example.
+//  Category: Bugs
+// File Mask: *
+//  ID Bytes: 
+//   History: 
+//   0.1   Initial Creation
+//------------------------------------------------
+
+typedef struct (BYTE BytesPerSectorShift)
+{
+    DWORD values[BytesPerSectorShift];
+} FOO;
+
+typedef union (BYTE BytesPerSectorShift)
+{
+    DWORD alpha;
+    DWORD beta;
+    DWORD gamma;
+    FOO bar(BytesPerSectorShift);       // this one is ok?!
+    struct {
+        FOO bar(BytesPerSectorShift);   // this one is not. "ERROR Line XX: Variable 'BytesPerSectorShift' is undefined"
+        FOO bar(BytesPerSectorShift);
+    } BIZ;
+} BAZ <optimize=false>;
+
+BAZ lollipop(12);
