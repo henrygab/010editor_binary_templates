@@ -22,11 +22,26 @@ typedef union (BYTE BytesPerSectorShift)
     DWORD alpha;
     DWORD beta;
     DWORD gamma;
-    FOO bar(BytesPerSectorShift);       // this one is ok?!
+    FOO bar(BytesPerSectorShift);       // this one is ok, because passed as parameter, so in scope
     struct {
-        FOO bar(BytesPerSectorShift);   // this one is not. "ERROR Line XX: Variable 'BytesPerSectorShift' is undefined"
+        FOO bar(BytesPerSectorShift);   // this one is not, because the BIZ struct has no access to containing struct's scope
         FOO bar(BytesPerSectorShift);
     } BIZ;
 } BAZ <optimize=false>;
+
+
+typedef union (BYTE BytesPerSectorShift)
+{
+    DWORD alpha;
+    DWORD beta;
+    DWORD gamma;
+    FOO bar(BytesPerSectorShift);       // this one is ok, because passed as parameter, so in scope
+    struct (BYTE innerParameter) {
+        FOO bar(innerParameter);        // this one is now ok, because the BIZ struct was passed the value
+        FOO bar(innerParameter);
+    } BIZ(BytesPerSectorShift);         // this passes the value so the internal structure can access it.
+} BIF <optimize=false>;
+
+
 
 BAZ lollipop(12);
