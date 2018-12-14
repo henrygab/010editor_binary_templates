@@ -1,5 +1,4 @@
 // TODO:
-// [ ] Update 'DetectedSectorSize' when creating any supported drive
 // [ ] Add hacks to prevent accidental optimized-array instantiations...
 // [ ] For a given section:
 // [ ] Forward-define all structures, with inline documentation on use.
@@ -96,13 +95,13 @@ local int NumDrives = 0;
 // This last option is the design currently being implemented.
 // 
 
-local const QUAD  DefaultSectorSize          <hidden=true> = 512;
-local const DWORD DefaultBytesPerSectorShift <hidden=true> = 9;
+local const QUAD  DefaultBytesPerSector          <hidden=true> = 512;
+local const BYTE  DefaultBytesPerSectorShift     <hidden=true> = 9;
 //local const QUAD  DefaultSectorSize          <hidden=true> = 4096;
-//local const DWORD DefaultBytesPerSectorShift <hidden=true> = 12;
+//local const BYTE  DefaultBytesPerSectorShift <hidden=true> = 12;
 
 boolean IsExactlyOneBitSet( UQUAD value ) {  return 0 == (value & (value-1)); }
-DWORD BytesPerSectorToBytesPerSectorShift(DWORD BytesPerSector) {
+BYTE BytesPerSectorToBytesPerSectorShift(DWORD BytesPerSector) {
     local DWORD i;
     local DWORD tmp;
 
@@ -117,14 +116,14 @@ DWORD BytesPerSectorToBytesPerSectorShift(DWORD BytesPerSector) {
     }
     return i;
 }
-DWORD BytesPerSectorShiftToBytesPerSector(DWORD BytesPerSectorShift) {
+DWORD BytesPerSectorShiftToBytesPerSector(BYTE BytesPerSectorShift) {
     local DWORD result;
     Assert(IsValidBytesPerSectorShift(BytesPerSectorShift));
     result = 1;
     result <<= BytesPerSectorShift;
     return result;
 }
-boolean IsValidBytesPerSectorShift(DWORD BytesPerSectorShift) {
+boolean IsValidBytesPerSectorShift(BYTE BytesPerSectorShift) {
     return
         (BytesPerSectorShift >= 9) &&  // minimum is 512 byte sectors
         (BytesPerSectorShift <= 12) ;  // maximum is 4k sectors
@@ -807,12 +806,12 @@ typedef struct {
 //================================================================
 
 // Structures for the first 24 sectors on exFAT media (aka the two boot regions)
-struct EXFAT_BOOT_SECTOR;                                                 // boot region sector [0]
+struct EXFAT_BOOT_SECTOR;              // (UBYTE BytesPerSectorShift);   // boot region sector [0]
 struct EXFAT_BOOT_EXTENDED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [1..8]
 struct EXFAT_BOOT_OEM_PARAMETER_SECTOR;// (UBYTE BytesPerSectorShift);   // boot region sector [9]
 struct EXFAT_BOOT_RESERVED_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [10]
 struct EXFAT_BOOT_CHECKSUM_SECTOR;     // (UBYTE BytesPerSectorShift);   // boot region sector [11]
-struct EXFAT_BOOT_REGION;
+struct EXFAT_BOOT_REGION;              // (UBYTE BytesPerSectorShift);   // the above twelve boot sectors make one boot region
 struct EXFAT_OEM_PARAMETER_TEMPLATE;   // for the EXFAT_BOOT_OEM_PARAMETER_SECTOR sector...
 struct EXFAT_OEM_FLASH_PARAMETER;      // for the EXFAT_BOOT_OEM_PARAMETER_SECTOR sector...
 
@@ -893,7 +892,7 @@ string  ReadEXFAT_BOOT_CHECKSUM_SECTOR         (const EXFAT_BOOT_CHECKSUM_SECTOR
 string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_region     );
 
 
-DWORD   CalculateExpectedExfatBootRegionChecksumUsingStartPosition (quad start, UBYTE BytesPerSectorShift);
+DWORD   CalculateExpectedExfatBootRegionChecksumUsingStartPosition (quad start, BYTE BytesPerSectorShift);
 DWORD   CalculateExpectedExfatBootRegionChecksum                   (const EXFAT_BOOT_REGION &boot_region);
 boolean IsValidExfatBootExtendedSector                             (const EXFAT_BOOT_EXTENDED_SECTOR &s);
 boolean IsValidExfatBootSector                                     (const EXFAT_BOOT_SECTOR &boot);
@@ -1121,7 +1120,7 @@ boolean IsValidClusterIndex(const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTE
     if (clusterIndex >  fat_table.MaximumValidCluster ) return false;
     return true;
 }
-DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, UBYTE BytesPerSectorShift) {
+DWORD CalculateExpectedExfatBootRegionChecksumUsingStartPosition(quad start, BYTE BytesPerSectorShift) {
     
     //Printf("EXFAT (%08Xh): Calculating checksum with %d bytes per sector shift\r\n", start, BytesPerSectorShift);
     Assert(IsValidBytesPerSectorShift(BytesPerSectorShift));
@@ -1153,7 +1152,10 @@ DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_reg
 // exFAT -- Unorganized from here on out   :-)
 //================================================================
 
-typedef struct {
+typedef struct (BYTE BytesPerSectorShift_Parameter) {
+    Assert(BytesPerSectorShift_Parameter >= 9); // min 512 bytes per sector
+    Assert(BytesPerSectorShift_Parameter <= 12); // max 4096 bytes per sector
+
     BYTE    jmp[3]                        <format=hex>;
     CHAR    OemName[8];
     BYTE    MustBeZero[53]                <format=hex>; // covers the FAT12/16/32 BPB area
@@ -1195,15 +1197,14 @@ typedef struct {
         MaximumValidClusterNumber = CountOfDataClusters + 1;
         BytesPerCluster   = BytesPerSector;
         BytesPerCluster  *= SectorsPerCluster;
-        if (BytesPerSector > DefaultSectorSize) {
-            // ensure boot sector takes entire sector of data
-            BYTE Undefined[BytesPerSector - DefaultSectorSize];
+        if (BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift_Parameter) > 512) {
+            BYTE Undefined[BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift_Parameter) - 512];
         }
         InternallyValid = 1; // only set this after checked validity
     }
 } EXFAT_BOOT_SECTOR <optimize=false>;
 
-typedef struct (UBYTE BytesPerSectorShift) {
+typedef struct (BYTE BytesPerSectorShift) {
     BYTE  ExtendedBootCode[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift)-4 ];
     DWORD ExtendedBootSignature;
 
@@ -1231,27 +1232,22 @@ typedef struct {
     UBYTE  Reserved[4];
 } EXFAT_OEM_FLASH_PARAMETER;
 
-typedef struct (UBYTE BytesPerSectorShift) {
+typedef struct (BYTE BytesPerSectorShift) {
     // regardless of the BytesPerSectorShift, only ten (10) OEM_PARAMETER_TEMPLATE are stored...
-    local DWORD bytesPerSector <hidden=true> = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
     local int i <hidden=true>;
-    local quad start <hidden=true> = FTell(); // oops!  prevents array optimization ... but not needed for this sector anyways
-
     for (i = 0; i < 10; i++) {
-        Assert( FTell() - start == 48*i );
         // TODO: read-ahead the GUID of the EXFAT_OEM_PARAMETER_TEMPLATE, and based on its value,
         //       instantiate pre-defined types.  There's only one type at the moment...
         EXFAT_OEM_PARAMETER_TEMPLATE Parameter;
     }
-    Assert( FTell() - start == 480 ); // oops! prevents array optimization ... but not needed for this sector anyways
-    UBYTE Reserved[ bytesPerSector - 480 ];    
+    UBYTE Reserved[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) - 480 ];    
 } EXFAT_BOOT_OEM_PARAMETER_SECTOR <optimize=false>;
 
-typedef struct (UBYTE BytesPerSectorShift) {
+typedef struct (BYTE BytesPerSectorShift) {
     UBYTE Reserved[ BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) ];
 } EXFAT_BOOT_RESERVED_SECTOR;
 
-typedef struct (UBYTE BytesPerSectorShift) {
+typedef struct (BYTE BytesPerSectorShift) {
     DWORD Checksum[BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) / 4];    
 
     // BUGBUG_NOW -- Move these out of this structure, into EXFAT_DRIVE or support function
@@ -1271,38 +1267,26 @@ typedef struct (UBYTE BytesPerSectorShift) {
     }
 } EXFAT_BOOT_CHECKSUM_SECTOR <read=ReadEXFAT_BOOT_CHECKSUM_SECTOR, optimize=false>;
 
-typedef struct {
-    // BUGBUG_NOW -- Take bps_shift as a parameter, mark all the EXFAT_BOOT structures
-    //               as on-demand (size attribute), and move all validation to higher
-    //               level logic...
-    EXFAT_BOOT_SECTOR Boot;
+typedef struct (BYTE BytesPerSectorShift) {
+    Assert(BytesPerSectorShift >= 9); // min 512 bytes per sector
+    Assert(BytesPerSectorShift <= 12); // max 4096 bytes per sector
+
+    EXFAT_BOOT_SECTOR Boot(BytesPerSectorShift);
 
     // BUGBUG_NOW -- Move these out of this structure, into EXFAT_DRIVE or support function
     local quad start;               // prevents array optimization
-    local DWORD bps_shift;          // prevents array optimization
     local boolean InternallyValid;  // prevents array optimization
     local DWORD i <hidden=true>;
-
     start = FTell(); 
     InternallyValid = 0;
-    bps_shift = Boot.BytesPerSectorShift;
-    if (9 > bps_shift || 12 < bps_shift) { // only support 512..4096 byte sectors
-        if (0 != DetectedSectorSize) {
-            Printf("EXFAT: Using previously detected sector size: %d\r\n", DetectedSectorSize);
-            bps_shift = BytesPerSectorToBytesPerSectorShift(DetectedSectorSize);
-        } else {
-            Printf("EXFAT: Using presumed sector size: %d\r\n", DefaultSectorSize);
-            bps_shift = BytesPerSectorToBytesPerSectorShift(DefaultSectorSize);
-        }
-    }
     // BUGBUG_NOW -- Move these out of this structure, into EXFAT_DRIVE or support function
 
     for (i = 0; i < 8; i++) {
-        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(bps_shift);
+        EXFAT_BOOT_EXTENDED_SECTOR ExtendedBoot(BytesPerSectorShift);
     }
-    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(bps_shift); // no validation here
-    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(bps_shift);     // no validation here
-    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(bps_shift);
+    EXFAT_BOOT_OEM_PARAMETER_SECTOR OemParameters(BytesPerSectorShift); // no validation here
+    EXFAT_BOOT_RESERVED_SECTOR ReservedSector(BytesPerSectorShift);     // no validation here
+    EXFAT_BOOT_CHECKSUM_SECTOR ChecksumSector(BytesPerSectorShift);
 
 } EXFAT_BOOT_REGION <read=ReadEXFAT_BOOT_REGION,optimize=false>; // TODO -- Waiting on bugfix -- enable on-demand ,size=BytesPerSectorShiftToBytesPerSector(bps_shift)>;
 
@@ -1540,7 +1524,7 @@ typedef struct {
 
 
 
-typedef struct {
+typedef struct (BYTE BytesPerSectorShift) {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
     local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
     local int  i   <hidden=true> = 0;
@@ -1551,7 +1535,8 @@ typedef struct {
     // Which boot region to use?  First one that's valid....
     local int idx = -1;
 
-    EXFAT_BOOT_REGION boot_region[2];
+    EXFAT_BOOT_REGION boot_region(BytesPerSectorShift);
+    EXFAT_BOOT_REGION boot_region(BytesPerSectorShift);
 
     for (i = 1; i >= 0; i--) {
         Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
@@ -1566,7 +1551,7 @@ typedef struct {
     }
     FsType = FILE_SYSTEM_TYPE_EXFAT;
 
-    // active is the second FAT only when there are two, and the active index is 1
+    // active is the second FAT only when there are two AND the active index is 1
     fatSectorOffsetInVolume  = boot_region[idx].Boot.FirstFatSectorOffset;
     if ((boot_region[idx].Boot.NumberOfFatTables == 2) && (boot_region[idx].Boot.VolumeFlags.ActiveFatIndex == 1)) {
         fatSectorOffsetInVolume += boot_region[idx].Boot.SectorsPerFat;
@@ -2892,7 +2877,7 @@ typedef struct
 //  be contiguous on disk, and this is the smallest supported sector size.
 int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 {
-    return DefaultSectorSize;
+    return DefaultBytesPerSector;
 }
 
 // FAT Directory Entry List
@@ -2921,7 +2906,7 @@ typedef struct
 //  be contiguous on disk, and 512 is the smallest supported sector size.
 int SizeFAT_DIRECTORY( FAT_DIRECTORY &dir )
 {
-    return DefaultSectorSize;
+    return DefaultBytesPerSector;
 }
 
 //################################################################
@@ -4146,9 +4131,9 @@ typedef struct
     //  data files that have more than 8 extents
 
     // BUGBUG-4kn -- magic required here to support 4k sectors on HFS
-    FSeek( pos + DefaultSectorSize );
+    FSeek( pos + DefaultBytesPerSector );
     LittleEndian();
-} HFS_FileData <size=DefaultSectorSize, optimize=false>; //use on-demand - size unknown
+} HFS_FileData <size=DefaultBytesPerSector, optimize=false>; //use on-demand - size unknown
 
 // HFS - File stored in the catalog
 typedef struct
@@ -4371,7 +4356,7 @@ typedef struct
 
 // For unknown drive - define a union of known headers
 //  and hope it is one of those
-typedef union 
+typedef union (BYTE BytesPerSectorShift)
 {
     local int DriveNum = NumDrives++ ; // keep track of the index of this drive
     struct MASTER_BOOT_RECORD mbr;
@@ -4380,8 +4365,15 @@ typedef union
     struct IFS_BOOTSECTOR boot_ifs;
     // BUGBUG -- as of v9.0c, the parser has a bug with non-optimized arrays declared within a union; workaround is to wrap in a struct
     struct {
-       struct EXFAT_BOOT_REGION boot_exfat[2];
-    } exfat;
+       // struct EXFAT_BOOT_REGION boot_region(BytesPerSectorShift); // BUGBUG -- parameter not recognized
+       // struct EXFAT_BOOT_REGION boot_region(BytesPerSectorShift); // BUGBUG -- parameter not recognized
+       struct EXFAT_BOOT_REGION boot_region(9);
+       struct EXFAT_BOOT_REGION boot_region(9);
+    } exfat512;
+    struct {
+       struct EXFAT_BOOT_REGION boot_region(12);
+       struct EXFAT_BOOT_REGION boot_region(12);
+    } exfat4k;
 } DRIVE_NOT_SUPPORTED <optimize=false>;
 
 //################################################################
@@ -4397,7 +4389,7 @@ typedef union
 // HACKHACK: I would use a struct with bitfield enums, but
 //           local structs are not a supported feature as of v9.0.
 
-FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
+FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesPerSectorShift )
 {
     if (allowedTypes == FILE_SYSTEM_TYPE_NONE) return FILE_SYSTEM_TYPE_NONE;
 
@@ -4405,51 +4397,27 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
     // as the first sector of the volume (e.g., boot sector)
     local FILE_SYSTEM_TYPE result <hidden=true> = FILE_SYSTEM_TYPE_NONE;
     local int64 startPos <hidden=true> = FTell();
+    local DWORD bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
    
     //Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
 
     // todo: add fs recognition code
-    if (allowedTypes & FILE_SYSTEM_TYPE_EXFAT) {
+    if (((BytesPerSectorShift == 9) || (BytesPerSectorShift == 12)) &&
+        (allowedTypes & FILE_SYSTEM_TYPE_EXFAT)
+        ) {
         FSeek(startPos);
         //Printf("FSREC      : ? EXFAT_BOOT_SECTOR\r\n");
-        // exFAT requires at least 24 sectors just for FS recognition
-        if (FileSize() - startPos < DefaultSectorSize * 24) {
-            //Printf("FSREC      : exFAT volume too small\r\n");
-        } else if (DetectedSectorSize > DefaultSectorSize && 
-                   (FileSize() - startPos < DetectedSectorSize * 24)) {
-            //Printf("FSREC      : exFAT volume too small (2)\r\n");
-        } else {
-            // BUGBUG-exFAT: update FSRec to validate at least one (of two possible) boot regions
-            //               which includes potentially guessing sector size (512 vs. 4096)
-            // BUGBUG-4kn: see above line
-            EXFAT_BOOT_REGION exfat_boot_region <hidden=true>;
-            if (IsValidExfatBootRegion(exfat_boot_region)) {
-                Printf("FSREC      : Valid: exFAT first boot region\r\n");
-                result |= FILE_SYSTEM_TYPE_EXFAT;
-            } else {
-                // Try 512 byte sectors?
-                FSeek(startPos + (12 * 512));
-                EXFAT_BOOT_REGION exfat_boot_region_512 <hidden=true>;
-                if (IsValidExfatBootRegion(exfat_boot_region_512) &&
-                    (exfat_boot_region_512.Boot.BytesPerSector == 512)) {
-                    Printf("FSREC      : Valid: exFAT second boot region at +512 bytes\r\n");
-                    result |= FILE_SYSTEM_TYPE_EXFAT;
-                } else {
-                    // try 4k sectors?
-                    FSeek(startPos + (12 * 4096));
-                    EXFAT_BOOT_REGION exfat_boot_region_4k <hidden=true>;
-                    if (IsValidExfatBootRegion(exfat_boot_region_4k) &&
-                        (exfat_boot_region_4k.Boot.BytesPerSector == 4096)) {
-                        Printf("FSREC      : Valid: exFAT second boot region at +4k bytes\r\n");
-                        result |= FILE_SYSTEM_TYPE_EXFAT;
-                    } else {
-                        //Printf("FSREC      : exFAT not valid\r\n");
-                    }
-                }
-            }
+        EXFAT_BOOT_REGION exfat_boot_region(BytesPerSectorShift) <hidden=true>;
+        EXFAT_BOOT_REGION exfat_boot_region(BytesPerSectorShift) <hidden=true>;
+        if (IsValidExfatBootRegion(exfat_boot_region[0])) {
+            Printf("FSREC      : Valid: exFAT first boot region\r\n");
+            result |= FILE_SYSTEM_TYPE_EXFAT;
+        } else if (IsValidExfatBootRegion(exfat_boot_region[1])) {
+            Printf("FSREC      : Valid: exFAT second boot region\r\n");
+            result |= FILE_SYSTEM_TYPE_EXFAT;
         }
     }
-    if (allowedTypes & FILE_SYSTEM_TYPE_ANY_FAT_MASK) {
+    if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_ANY_FAT_MASK)) {
         FSeek(startPos);
         //Printf("FSREC      : ? FAT_BOOTSECTOR\r\n");
         FAT_BOOTSECTOR fat_boot <hidden=true>;
@@ -4460,7 +4428,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
             //Printf("FSREC      : FAT12/16/32 not valid\r\n");
         }
     }
-    if (allowedTypes & FILE_SYSTEM_TYPE_NTFS) {
+    if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_NTFS)) {
         FSeek(startPos);
         //Printf("FSREC      : ? NTFS_BOOTSECTOR\r\n");
         NTFS_BOOTSECTOR ntfs_boot <hidden=true>;
@@ -4471,7 +4439,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
             //Printf("FSREC      : NTFS not valid\r\n");
         }
     }
-    if (allowedTypes & FILE_SYSTEM_TYPE_HPFS) {
+    if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_HPFS)) {
         //Printf("FSREC      : ? HPFS\r\n");
         if (IsValidHfsBootSector(FTell())) {
             //Printf("FSREC      : Valid: HPFS shown as potentially valid\r\n");
@@ -4480,7 +4448,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes)
             //Printf("FSREC      : HPFS not valid\r\n");
         }
     }
-    if (allowedTypes & FILE_SYSTEM_TYPE_IFS) {
+    if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_IFS)) {
         FSeek(startPos);
         //Printf("FSREC      : ? IFS_BOOTSECTOR\r\n");
         IFS_BOOTSECTOR ifs_boot <hidden=true>;
@@ -4602,23 +4570,22 @@ int DriveAlreadyExists( int64 pos )
 // Function to detect different types of drives
 // NOTE: uses int instead of PARTITION_SYSTEMID (which is a byte)
 //       to allow callers to indicate 'unknown/undefined' by passing -1.
-// NOTE: if can determine sector size from a drive, save that, as it should
-//       be the same for all partitions...
-int AutoDetectDrive( int SystemID )
+boolean AutoDetectDrive( int SystemID, BYTE BytesPerSectorShift )
 {
     local int    i <hidden=true>;
     local int64  startPos <hidden=true> = FTell();
     local string SystemIDAsString = ReadPARTITION_SYSTEMID(SystemID);
     local int64  newStart <hidden=true>;
+    local DWORD  bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
 
-    Printf("ADD() Enter: startPos = %08x, SystemID == %s\r\n", startPos, SystemIDAsString);
+    Printf("ADD() Enter: startPos = %08x, SystemID == %s, BytesPerSectorShift == %d\r\n", startPos, SystemIDAsString, BytesPerSectorShift);
 
     if ( SystemID == 237 )
     {
         // EDh -- was proposed for GPT hybrid MBR solution, but no idea if used?
         Printf("ADD() Exit: startPos = %08x, GPT hybrid MBR unsupported\r\n", startPos);
-        DRIVE_NOT_SUPPORTED drive;
-        return;
+        DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
+        return false;
     }
 
     // TODO -- Fill in the below sections marked as "unsupported"?
@@ -4636,8 +4603,8 @@ int AutoDetectDrive( int SystemID )
         // These partition types are containers of other partitions
         // but have no test case for them.
         Printf("ADD() Exit: startPos = %08x, partition type %s unsupported\r\n", startPos, SystemIDAsString);
-        DRIVE_NOT_SUPPORTED drive;
-        return;
+        DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
+        return false;
     }
 
     if ( (SystemID == PARTITION_SYSTEMID_EXTENDED) ||
@@ -4652,15 +4619,14 @@ int AutoDetectDrive( int SystemID )
         {
             if( extended.partitions[i].SystemID != EMPTY )
             {
-                // BUGBUG-4kn -- magic required here to support 4k sectors
-                newStart = startPos + extended.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
+                newStart = startPos + extended.partitions[i].RelativeSector * bytesPerSector;
                 Printf("ADD()      : checking extended[%d] (%x)\r\n", i, newStart);
                 FSeek( newStart );
                 if( !DriveAlreadyExists(FTell()) )
                 {
-                    if( !AutoDetectDrive( extended.partitions[i].SystemID ) )
+                    if( !AutoDetectDrive( extended.partitions[i].SystemID, BytesPerSectorShift ) )
                     {
-                        DRIVE_NOT_SUPPORTED drive;
+                        DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
                     }
                 }
             }
@@ -4678,13 +4644,12 @@ int AutoDetectDrive( int SystemID )
         i = 0;
         while( exists( efi.partitions[i] ) )
         {
-            // BUGBUG-4kn -- magic required here to support 4k sectors
-            newStart = efi.partitions[i].FirstLBA * DefaultSectorSize;
+            newStart = efi.partitions[i].FirstLBA * bytesPerSector;
             Printf("ADD()      : checking EFI[%d] (%x)\r\n", i, newStart);
             FSeek( newStart );
-            if( !AutoDetectDrive( -1 ) )
+            if( !AutoDetectDrive( -1, BytesPerSectorShift ) )
             {
-                DRIVE_NOT_SUPPORTED drive;
+                DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
             }
             i++;
         }
@@ -4696,7 +4661,7 @@ int AutoDetectDrive( int SystemID )
 
     if (preferredType != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
-        detected = FileSystemRecognizer(preferredType);
+        detected = FileSystemRecognizer(preferredType, BytesPerSectorShift);
         FSeek(startPos); // reset after calling FSRec()
         if (detected == FILE_SYSTEM_TYPE_NONE) {
             Printf("ADD()      : Preferred type not detected, trying other types\r\n");
@@ -4704,11 +4669,11 @@ int AutoDetectDrive( int SystemID )
     }
     if (detected == FILE_SYSTEM_TYPE_NONE) {
         local FILE_SYSTEM_TYPE secondCheck = FILE_SYSTEM_TYPE_VALID_MASK ^ preferredType;
-        detected = FileSystemRecognizer(secondCheck); // try all the other options...
+        detected = FileSystemRecognizer(secondCheck, BytesPerSectorShift); // try all the other options...
         FSeek(startPos); // reset after calling FSRec()
     }
     if (detected == FILE_SYSTEM_TYPE_NONE) {
-        Printf("ADD()      : No drive due to no valid detected file system at offset %08Xh\r\n", startPos);
+        Printf("ADD()      : No drive due to no valid detected file system at offset %08Xh, %d\r\n", startPos, BytesPerSectorShift);
         return false; // not found
     }
 
@@ -4740,11 +4705,13 @@ int AutoDetectDrive( int SystemID )
         Assert(!"Unsupported file system type?");
         return false;
     }
-    
-    // TODO -- Update detected sector size, if not already known and
-    //         the most-recently added drive adds that capability
     return true;
 }
+
+boolean DetectPartitionlessFileSystem(BYTE BytesPerSectorShift) {
+    
+}
+
 
 ////////////////////////////////////////////////////////////////////////
 // THIS IS THE ACTUAL STARTING POINT OF EXECUTION IN THE TEMPLATE
@@ -4759,8 +4726,35 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
 }
 
 // Check for different drive types
-local boolean AutoDetectDriveResult = AutoDetectDrive(-1);
-if (!AutoDetectDriveResult)
+// TODO: light-weight function that detects 4k MBR, 4k exFAT, etc. ... to skip 512 byte parse attempts?
+// First, check at the default sector size.
+// Next, check at the other of ( 512, 4096 ).
+
+
+// TODO: Consider how one might store array of tuples.
+// Then, store them for <quad pos, byte sectorShift> for list of UNSUPPORTED_DRIVE locations,
+// rather than actually adding them during AutoDetectDrive().
+// This would allow post-detection addition of UNSUPPORTED_DRIVE of the correct sector size,
+// if any supported file systems were found....
+
+local BYTE detectedBytesPerSectorShift = 0;
+// detect using 512 byte sectors first
+if (!detectedBytesPerSectorShift) {
+    if (AutoDetectDrive(-1, DefaultBytesPerSectorShift)) {
+        detectedBytesPerSectorShift = DefaultBytesPerSectorShift;
+    }
+}
+// then try again using 4k sectors
+if (!detectedBytesPerSectorShift) {
+    if (AutoDetectDrive(-1, (DefaultBytesPerSectorShift == 9) ? 12 : 9)) {
+        detectedBytesPerSectorShift = (DefaultBytesPerSectorShift == 9) ? 12 : 9;
+    }
+}
+
+local BYTE bps_shift = 9;
+// didn't work with either 512 or 4096 bytes per sector...
+// try MBR...
+if (!detectedBytesPerSectorShift)
 {
     // Auto detect the MBR
     // BUGBUG-4kn -- If MBR, how to detect 4k sector size?
@@ -4780,7 +4774,7 @@ if (!AutoDetectDriveResult)
         SystemID[i]      = ReadUByte( 0x1C2 + i*10h );
         // only parse when:
         // BOTH a valid boot indicator (0x00 or 0x80)
-        // AND  when the partition is not listed as an empty partition
+        // AND  when the partition is *not* listed as an empty partition
         if( (BootIndicator[i] == SYSTEM_PARTITION || BootIndicator[i] == NOBOOT) &&
             (SystemID[i] != PARTITION_SYSTEMID_EMPTY) )
         {
@@ -4795,7 +4789,7 @@ if (!AutoDetectDriveResult)
 
             // Jump to Partition using boot_mbr structure definition of partition
             // BUGBUG-4kn -- magic required here to support 4k sectors
-            tmpPartitionLocation = boot_mbr.partitions[i].RelativeSector*(INT64)DefaultSectorSize;
+            tmpPartitionLocation = boot_mbr.partitions[i].RelativeSector * (INT64)DefaultBytesPerSector;
             FSeek(tmpPartitionLocation);
             
             // If the drive already exists (e.g., MBR+GPT both listing partitions)
@@ -4807,7 +4801,7 @@ if (!AutoDetectDriveResult)
                 if(!SystemID_AutoDetectDrive_Result[i])
                 {
                     FSeek(tmpPartitionLocation); // AutoDetectDrive() may have position-altering side effect....
-                    DRIVE_NOT_SUPPORTED drive;
+                    DRIVE_NOT_SUPPORTED drive( bps_shift);
                 }
             }
         }
@@ -4817,7 +4811,7 @@ if (!AutoDetectDriveResult)
     if( !mbr_boot_ok )
     {
         FSeek(0);
-        DRIVE_NOT_SUPPORTED drive;
+        DRIVE_NOT_SUPPORTED drive( bps_shift);
     }
 }
 
