@@ -27,14 +27,13 @@ int DELTA(int parameter1) {
 int GAMMA;
 
 
-// BUG -- text within special keyword 'exists()' should never cause compilation error
+// BUG -- text within special keyword `exists()` and `function_exists()` should never cause compilation error
 
-Printf("%s: %s\r\n", "GAMMA", exists(GAMMA) ? "exists" : "--dne--"); // OK, finds variable
-Printf("%s: %s\r\n", "DELTA", exists(DELTA) ? "exists" : "--dne--"); // ?? compiles, but does not find function
-Printf("%s: %s\r\n", "BETA",  exists(BETA)  ? "exists" : "--dne--"); // BUG - calls this a compilation error
-Printf("%s: %s\r\n", "ALPHA", exists(ALPHA) ? "exists" : "--dne--"); // BUG - calls this a compilation error
-
-
-
-
-
+Printf("%s: %s\r\n", "GAMMA var",          exists(GAMMA) ? "exists" : "--dne--"); // OK, finds variable
+Printf("%s: %s\r\n", "DELTA var",          exists(DELTA) ? "exists" : "--dne--"); // OK, says variable DNE
+Printf("%s: %s\r\n", "DELTA fun", function_exists(DELTA) ? "exists" : "--dne--"); // OK, finds function
+//Printf("%s: %s\r\n", "BETA  var",          exists(BETA)  ? "exists" : "--dne--"); // BUG - calls this a compilation error
+//Printf("%s: %s\r\n", "BETA  fun", function_exists(BETA)  ? "exists" : "--dne--"); // BUG - calls this a compilation error
+//Printf("%s: %s\r\n", "BETA  fun", function_exists(BETA(8))  ? "exists" : "--dne--"); // BUG - calls this a compilation error
+//Printf("%s: %s\r\n", "DELTA var",          exists(ALPHA) ? "exists" : "--dne--"); // BUG - calls this a compilation error
+//Printf("%s: %s\r\n", "ALPHA fun", function_exists(ALPHA) ? "exists" : "--dne--"); // BUG - calls this a compilation error
