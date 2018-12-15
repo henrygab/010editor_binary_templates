@@ -1,0 +1,40 @@
+//------------------------------------------------
+//--- 010 Editor v9.0.1 Binary Template
+//
+//      File: ExistsSpecialOperator.bt
+//   Authors: henrygab
+//   Version: 0.1
+//   Purpose: Minimal template to show bug
+//  Category: bugs
+// File Mask: *
+//  ID Bytes: 
+//   History: 
+//   0.1  Initial version
+//------------------------------------------------
+
+typedef struct ALPHA {
+    uint32 alpha;
+};
+
+typedef struct BETA(uint32 parameter1) {
+    byte beta[parameter1];
+};
+
+int DELTA(int parameter1) {
+    return 1;
+}
+
+int GAMMA;
+
+
+// BUG -- text within special keyword 'exists()' should never cause compilation error
+
+Printf("%s: %s\r\n", "GAMMA", exists(GAMMA) ? "exists" : "--dne--"); // OK, finds variable
+Printf("%s: %s\r\n", "DELTA", exists(DELTA) ? "exists" : "--dne--"); // ?? compiles, but does not find function
+Printf("%s: %s\r\n", "BETA",  exists(BETA)  ? "exists" : "--dne--"); // BUG - calls this a compilation error
+Printf("%s: %s\r\n", "ALPHA", exists(ALPHA) ? "exists" : "--dne--"); // BUG - calls this a compilation error
+
+
+
+
+
