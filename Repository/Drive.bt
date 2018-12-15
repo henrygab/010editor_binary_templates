@@ -4668,7 +4668,7 @@ boolean AutoDetectDrive( int SystemID, BYTE BytesPerSectorShift )
         // Find the extended drives
         for( i = 0; i < 2; i++ )
         {
-            if( extended.partitions[i].SystemID != EMPTY )
+            if( extended.partitions[i].SystemID != PARTITION_SYSTEMID_EMPTY )
             {
                 newStart = startPos + extended.partitions[i].RelativeSector * bytesPerSector;
                 Printf("ADD()      : checking extended[%d] (%x)\r\n", i, newStart);
@@ -4803,6 +4803,7 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
 local BYTE detectedBytesPerSectorShift = 0;
 
 // WHAT THE CODE PATH LOOKS LIKE TODAY:
+///////////////////////////////////////////
 // 1. Detect partition-less file system by calling AutoDetectDrive(-1,  9)
 // 2. Detect partition-less file system by calling AutoDetectDrive(-1, 12)
 // 3. If either of the above worked, then end processing.
@@ -4819,8 +4820,35 @@ local BYTE detectedBytesPerSectorShift = 0;
 //       v.   If AutoDetectDrive() failed, adds DRIVE_NOT_SUPPORTED at that position
 //
 // AutoDetectDrive(-1, *) --> AutoDetectDrive2() above...
+//     
 // AutoDetectDrive(SystemID, *) does the following:
-
+//
+// For explicitly unsupported SystemIDs:
+//      add DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
+//      return FALSE
+//
+// For the following systemIDs
+//     SystemID == PARTITION_SYSTEMID_EXTENDED
+//     SystemID == PARTITION_SYSTEMID_WIN95_EXT_PARTITION
+//     SystemID == PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED
+//     Parse the parititon table
+//         if a drive already exists at that location, do nothing
+//         call AutoDetectDrive(PartitionSystemID, *) -- RECURSIVE!!!
+//         if that recursive call to ADD() returned FALSE,
+//             add DRIVE_NOT_SUPPORTED for that location
+//     return TRUE (regardless of result from partition parsing)
+//
+// For systemID of PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER
+//     add EFI_PARTITION structure (aka GPT partition)
+//     for each partition in EFI_PARTITION...
+//         Seek to the partition
+//         call AutoDetectDrive(-1,*) -- Can replace with call to AutoDetectDrive2()
+//         if that call to ADD() returned FALSE,
+//             add DRIVE_NOT_SUPPORTED for that location
+//     return TRUE (even if zero EFI partitions existed)
+//
+// Call AutoDetectDrive2() with the preferred  file system type for that ID.
+//     
 
 
 // detect using 512 byte sectors first
