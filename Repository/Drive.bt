@@ -4899,7 +4899,14 @@ void AddDriveNotSupportedLocation(quad filePosition, int SystemID, BYTE BytesPer
     // TODO: push onto temporary list, similar to qq_*
 }
 boolean PotentialPartitionAlreadyExists(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
-    // TODO: check qq_* for match
+    local int t = 0;
+    for (t = 0; t < qq_PotentialPartitionCount; t++) {
+        if ((qq_FilePosition        [t] == filePosition       ) &&
+            (qq_SystemID            [t] == SystemID           ) &&
+            (qq_BytesPerSectorShift [t] == BytesPerSectorShift)) {
+            return t; // non-zero, also the index
+        }
+    }
     return false;
 }
 void AddPotentialPartitionLocation(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
