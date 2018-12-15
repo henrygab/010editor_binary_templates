@@ -686,7 +686,7 @@ local const uint32 MAX_UINT32 <hidden=true> = 0xFFFFFFFF;
 Assert((MAX_UINT32 ^ (FILE_SYSTEM_TYPE_INVALID_MASK ^ FILE_SYSTEM_TYPE_VALID_MASK)) == 0);
 Assert((MAX_UINT32 ^ (FILE_SYSTEM_TYPE_INVALID_MASK | FILE_SYSTEM_TYPE_VALID_MASK)) == 0);
 
-string ReadFILE_SYSTEM_TYPE(FILE_SYSTEM_TYPE &type) {
+string ReadFILE_SYSTEM_TYPE(const FILE_SYSTEM_TYPE &type) {
     if (type == FILE_SYSTEM_TYPE_NONE) { return "FILE_SYSTEM_TYPE_NONE"; }
 
     local string result <hidden=true>;
@@ -4707,62 +4707,74 @@ boolean AutoDetectDrive( int SystemID, BYTE BytesPerSectorShift )
         Printf("ADD() Exit: startPos = %08x, EFI partitions\r\n", startPos);
         return true;
     }
+    FSeek(startPos);
+
     local FILE_SYSTEM_TYPE preferredType <hidden=true> = PreferredFileSystemTypeFromPartitionSystemID(SystemID);
+    local boolean add2Result = AutoDetectDrive2(preferredType, BytesPerSectorShift );
+    Printf("ADD() Exit: startPos = %08x, ADD2 result %d\r\n", startPos, add2Result);
+    return add2Result;
+}
+
+boolean AutoDetectDrive2( FILE_SYSTEM_TYPE preferredFilesSystems, BYTE BytesPerSectorShift )
+{
+    local int    i <hidden=true>;
+    local int64  startPos <hidden=true> = FTell();
+    local int64  newStart <hidden=true>;
+    local DWORD  bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
     local FILE_SYSTEM_TYPE detected <hidden=true> = FILE_SYSTEM_TYPE_NONE;
 
-    if (preferredType != FILE_SYSTEM_TYPE_NONE) {
+    Printf("ADD2() Enter: startPos = %08x, BytesPerSectorShift == %d, preferredFS == %s\r\n", startPos, BytesPerSectorShift, ReadFILE_SYSTEM_TYPE(preferredFilesSystems));
+
+    FSeek(startPos); // reset after calling FSRec()
+    if (preferredFilesSystems != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
         detected = FileSystemRecognizer(preferredType, BytesPerSectorShift);
-        FSeek(startPos); // reset after calling FSRec()
         if (detected == FILE_SYSTEM_TYPE_NONE) {
-            Printf("ADD()      : Preferred type not detected, trying other types\r\n");
+            Printf("ADD2()      : Preferred type not detected, trying other types\r\n");
         }
     }
+    FSeek(startPos); // reset after calling FSRec()
     if (detected == FILE_SYSTEM_TYPE_NONE) {
-        local FILE_SYSTEM_TYPE secondCheck = FILE_SYSTEM_TYPE_VALID_MASK ^ preferredType;
+        local FILE_SYSTEM_TYPE secondCheck = FILE_SYSTEM_TYPE_VALID_MASK ^ preferredFilesSystems;
         detected = FileSystemRecognizer(secondCheck, BytesPerSectorShift); // try all the other options...
-        FSeek(startPos); // reset after calling FSRec()
     }
+    FSeek(startPos); // reset after calling FSRec()
     if (detected == FILE_SYSTEM_TYPE_NONE) {
-        Printf("ADD()      : No drive due to no valid detected file system at offset %08Xh, %d\r\n", startPos, BytesPerSectorShift);
+        Printf("ADD2()      : No drive due to no valid detected file system at offset %08Xh, %d\r\n", startPos, BytesPerSectorShift);
         return false; // not found
     }
+    FSeek(startPos); // reset after calling FSRec()
 
     // assert that only one file system type was detected?
     Assert(IsExactlyOneBitSet(detected));
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
-        Printf("ADD()      : adding EXFAT\r\n");
+        Printf("ADD2()      : adding EXFAT\r\n");
         EXFAT_DRIVE drive(BytesPerSectorShift);
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
-        Printf("ADD()      : adding FAT32\r\n");
+        Printf("ADD2()      : adding FAT32\r\n");
         FAT_DRIVE drive;
     } else if (detected & FILE_SYSTEM_TYPE_FAT16) {
-        Printf("ADD()      : adding FAT16\r\n");
+        Printf("ADD2()      : adding FAT16\r\n");
         FAT_DRIVE drive;
     } else if (detected & FILE_SYSTEM_TYPE_FAT12) {
-        Printf("ADD()      : adding FAT12\r\n");
+        Printf("ADD2()      : adding FAT12\r\n");
         FAT_DRIVE drive;
     } else if (detected & FILE_SYSTEM_TYPE_NTFS) {
-        Printf("ADD()      : adding NTFS\r\n");
+        Printf("ADD2()      : adding NTFS\r\n");
         NTFS_DRIVE drive;
     } else if (detected & FILE_SYSTEM_TYPE_HPFS) {
-        Printf("ADD()      : adding HPFS\r\n");
+        Printf("ADD2()      : adding HPFS\r\n");
         HFS_DRIVE drive;
     } else if (detected & FILE_SYSTEM_TYPE_IFS) {
-        Printf("ADD()      : adding IFS\r\n");
+        Printf("ADD2()      : adding IFS\r\n");
         IFS_BOOTSECTOR drive;
     } else {
-        Printf("**** ADD() : Unsupported detected %s\r\n", EnumToString(detected));
+        Printf("**** ADD2() : Code does not handle detected file system type: %s\r\n", EnumToString(detected));
         Assert(!"Unsupported file system type?");
         return false;
     }
     return true;
 }
-
-boolean DetectPartitionlessFileSystem(BYTE BytesPerSectorShift) {
-    
-}
-
 
 ////////////////////////////////////////////////////////////////////////
 // THIS IS THE ACTUAL STARTING POINT OF EXECUTION IN THE TEMPLATE
@@ -4789,6 +4801,28 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
 // if any supported file systems were found....
 
 local BYTE detectedBytesPerSectorShift = 0;
+
+// WHAT THE CODE PATH LOOKS LIKE TODAY:
+// 1. Detect partition-less file system by calling AutoDetectDrive(-1,  9)
+// 2. Detect partition-less file system by calling AutoDetectDrive(-1, 12)
+// 3. If either of the above worked, then end processing.
+// 4. Detect and parse MBR-based partition (this also parses GPT, which defines an MBR wrapper partition)
+//    a. MBR has up to four partitions...
+//    b. Eligible partitions are those which are SYSTEM_PARTITION or NOBOOT, and which are **NOT** PARTITION_SYSTEMID_EMPTY
+//    c. If there are ANY eligible partitions, add MASTER_BOOT_RECORD structure at file offset zero
+//    c. For each eligible partition:
+//       i.   FSeek() to the partition
+//       ii.  check if drive already exists (to avoid duplicates from hybrid MBR/GPT
+//       iii. determine preferred file system type from the partition system ID (for logging only)
+//       iv.  call AutoDetectDrive( system ID, bps_shift )
+//            *** NOTE: THIS IS THE ONLY ENTRY POINT AT THIS LEVEL WITH A SYSTEM ID SPECIFIED ***
+//       v.   If AutoDetectDrive() failed, adds DRIVE_NOT_SUPPORTED at that position
+//
+// AutoDetectDrive(-1, *) --> AutoDetectDrive2() above...
+// AutoDetectDrive(SystemID, *) does the following:
+
+
+
 // detect using 512 byte sectors first
 if (!detectedBytesPerSectorShift) {
     if (AutoDetectDrive(-1, DefaultBytesPerSectorShift)) {
