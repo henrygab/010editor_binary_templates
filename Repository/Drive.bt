@@ -1,4 +1,7 @@
 // TODO:
+// [ ] Mandatory parameters for ALL Drives:
+//          local FILE_SYSTEM_TYPE FsType;  // to indicate the file system type of that drive
+//          local BYTE DriveBytesPerSectorShift; // to indicate sector size ... presumed 512 if does not exist
 // [ ] Add hacks to prevent accidental optimized-array instantiations...
 // [ ] For a given section:
 // [ ] Forward-define all structures, with inline documentation on use.
@@ -588,10 +591,8 @@ typedef enum <DWORD>
 } EFI_TYPE <format=hex>;
 
 // EFI partition entry
-typedef struct 
+typedef struct (int size)
 {
-    local int size <hidden=true>;
-
     EFI_TYPE Type; // Use the first UInt32 of the GUID to show the type
     FSkip( -4 );
     GUID     TypeGUID;
@@ -608,11 +609,10 @@ typedef struct
     wchar_t  Name[36];
 
     // Some partitions may have extra space at the end
-    // BUGBUG -- this tightly couples to caller; Better to have as a parameter to the struct?  But, it's OK for array optimizations...
-    size = parentof(this).header.PartitionSize;
-    if( size > 128 )
+    if( size > 128 ) {
         UBYTE   Unused[ size - 128 ] <format=hex>;
-} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>; // OK to optimize.
+    }
+} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>; // OK to optimize.  But specifying size will fail if adding a parameter to this struct.  Sigh.
 
 // Show EFI partition name and EFI type beside the entry
 wstring ReadEFI_PARTITION_ENTRY( EFI_PARTITION_ENTRY &entry )
@@ -659,7 +659,7 @@ typedef struct
         // Create array of partitions
         if( count > 0 )
         {
-            EFI_PARTITION_ENTRY partitions[count]; // TODO - How to declare an array of structs that require a parameter?  pass in header.PartitionSize....
+            EFI_PARTITION_ENTRY partitions(header.PartitionSize)[count];
         }
     }
 
@@ -716,8 +716,11 @@ string ReadFILE_SYSTEM_TYPE(const FILE_SYSTEM_TYPE &type) {
 //################################################################
 local const boolean IFS_VARIABLE_LENGTH_STRUCTURE <hidden=true> = false;
 
-typedef struct { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
-    local UINT32 ExpectedChecksum;
+typedef struct (BYTE BytesPerSectorShift) { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_IFS;  // to indicate the file system type of that drive
+    local DWORD bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
+
+    local UINT32 ExpectedChecksum; // BUGBUG: Remove to avoid issues with optimized arrays
 
     BYTE    jmp[3]          <format=hex>;
     CHAR    OemName[8];
@@ -731,8 +734,13 @@ typedef struct { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
     // checksum matches expected checksum AND there's actually additional data
     if (IFS_VARIABLE_LENGTH_STRUCTURE && (Length > 24) && (ExpectedChecksum == Checksum)) {
         BYTE AdditionalData[Length-24] <format=hex>;
+        if (bytesPerSector > (Length + 24)) {
+            BYTE RemainingSectorData[ bytesPerSector - (Length-24) ];
+        }
+    } else if ((Length-24) < bytesPerSector) {
+        BYTE RemainingSectorData[ bytesPerSector - (Length-24) ];
     }
-} IFS_BOOTSECTOR <optimize=false>;
+} IFS_BOOTSECTOR <optimize=false>; // BUGBUG - should have size attribute, but fails with structure having any parameters
 
 // use a larger type to allow non-valid values (any value over 0xFFFF) to indicate errors
 UINT32 Calculate_IFS_BOOTSECTOR_Checksum( IFS_BOOTSECTOR& boot )
@@ -748,6 +756,10 @@ UINT32 Calculate_IFS_BOOTSECTOR_Checksum( IFS_BOOTSECTOR& boot )
             return 0xBAAD0001;
         }
     }
+    if (boot.Length < 24) {
+        return 0xBAAD0001;
+    }
+
     // If the IFS structure goes beyond the end of file, then NO possible valid checksum
     start = startof(boot);
     end = start + boot.Length;
@@ -776,13 +788,15 @@ boolean IsValidIfsBootsector( IFS_BOOTSECTOR &boot) {
     return true;
 }
 
-typedef struct {
+typedef struct (BYTE BytesPerSectorShift) {
     local int DriveNum;
     local FILE_SYSTEM_TYPE FsType;
+    local BYTE DriveBytesPerSectorShift = BytesPerSectorShift;
 
     DriveNum = NumDrives++; // keep track of the index of this drive
     FsType = FILE_SYSTEM_TYPE_IFS;
-    IFS_BOOTSECTOR boot;
+    IFS_BOOTSECTOR boot(BytesPerSectorShift);
+
 } IFS_DRIVE <open=true, optimize=false>;
 
 //################################################################
@@ -1526,7 +1540,9 @@ typedef struct {
 
 typedef struct (BYTE BytesPerSectorShift) {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
-    local FILE_SYSTEM_TYPE FsType   = FILE_SYSTEM_TYPE_NONE;
+    local FILE_SYSTEM_TYPE FsType       = FILE_SYSTEM_TYPE_NONE;
+    local BYTE DriveBytesPerSectorShift = BytesPerSectorShift;
+
     local int  i   <hidden=true> = 0;
     local quad pos <hidden=true>;
     local quad fatSectorOffsetInVolume <hidden=true>;
@@ -2169,6 +2185,8 @@ boolean IsValidFatBootSector(FAT_BOOTSECTOR &boot) {
 typedef struct
 {
     local int   DriveNum = NumDrives++; // keep track of the index of this drive
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NONE;
+    // local BYTE  DriveBytesPerSectorShift = BytesPerSector; // BUGBUG -- check for 4k support in FAT, then add paramter to struct to allow creation...
     local quad  FirstFatTableFilePos;
     local quad  DataAreaFilePos;
     local DWORD ClusterSize;
@@ -2182,7 +2200,6 @@ typedef struct
     local int   i <hidden=true>;
     local quad  BytesPerSector;
     local quad  CurrentPosSector;
-    local FILE_SYSTEM_TYPE FsType;
     local quad pos <hidden=true>;
 
 
@@ -3681,6 +3698,8 @@ string ReadNTFS_MASTER_FILE_TABLE( NTFS_MASTER_FILE_TABLE &mft )
 typedef struct
 {
     local int   DriveNum   = NumDrives++; // keep track of the index of this drive
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_NTFS;
+    // local BYTE DriveBytesPerSectorShift = BytesPerSectorShift; // BUGBUG -- validate 4k sector support, then enable parameterization of NTFS_DRIVE
     local int64 DriveStart = FTell();
     local DWORD ClusterSize;
 
@@ -4334,6 +4353,8 @@ typedef struct
 typedef struct
 {
     local int   DriveNum   = NumDrives++; // keep track of the index of this drive
+    local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_HPFS;
+    // local BYTE DriveBytesPerSectorShift = BytesPerSectorShift; // BUGBUG -- validate 4k sector support, then enable parameterization of NTFS_DRIVE
     local int64 DriveStart = FTell();
 
     // Define the drive header
@@ -4362,18 +4383,11 @@ typedef union (BYTE BytesPerSectorShift)
     struct MASTER_BOOT_RECORD mbr;
     struct FAT_BOOTSECTOR boot_fat;
     struct NTFS_BOOTSECTOR boot_ntfs;
-    struct IFS_BOOTSECTOR boot_ifs;
-    // BUGBUG -- as of v9.0c, the parser has a bug with non-optimized arrays declared within a union; workaround is to wrap in a struct
-    struct {
-       // struct EXFAT_BOOT_REGION boot_region(BytesPerSectorShift); // BUGBUG -- parameter not recognized
-       // struct EXFAT_BOOT_REGION boot_region(BytesPerSectorShift); // BUGBUG -- parameter not recognized
-       struct EXFAT_BOOT_REGION boot_region(9);
-       struct EXFAT_BOOT_REGION boot_region(9);
-    } exfat512;
-    struct {
-       struct EXFAT_BOOT_REGION boot_region(12);
-       struct EXFAT_BOOT_REGION boot_region(12);
-    } exfat4k;
+    struct IFS_BOOTSECTOR boot_ifs(BytesPerSectorShift);
+    struct (BYTE param1) {
+       struct EXFAT_BOOT_REGION boot_region(param1);
+       struct EXFAT_BOOT_REGION boot_region(param1);
+    } exfat (BytesPerSectorShift);
 } DRIVE_NOT_SUPPORTED <optimize=false>;
 
 //################################################################
@@ -4502,9 +4516,9 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
         }
     }
     FSeek(startPos);
-    if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_IFS)) {
+    if (allowedTypes & FILE_SYSTEM_TYPE_IFS) {
         //Printf("FSREC      : ? IFS_BOOTSECTOR\r\n");
-        IFS_BOOTSECTOR ifs_boot <hidden=true>;
+        IFS_BOOTSECTOR ifs_boot(BytesPerSectorShift) <hidden=true>;
         if (IsValidIfsBootsector(ifs_boot)){
             //Printf("FSREC      : Valid: IFS\r\n");
             result |= FILE_SYSTEM_TYPE_IFS;
@@ -4858,18 +4872,22 @@ local BYTE detectedBytesPerSectorShift = 0;
 //     
 
 
+// FIRST ATTEMPT TO DETECT FILE SYSTEM WITHOUT PARTITIONS:
+
 // detect using 512 byte sectors first
 if (!detectedBytesPerSectorShift) {
-    if (AutoDetectDrive(-1, DefaultBytesPerSectorShift)) {
+    if (AutoDetectDrive2(FILE_SYSTEM_TYPE_NONE, DefaultBytesPerSectorShift)) {
         detectedBytesPerSectorShift = DefaultBytesPerSectorShift;
     }
 }
 // then try again using 4k sectors
 if (!detectedBytesPerSectorShift) {
-    if (AutoDetectDrive(-1, (DefaultBytesPerSectorShift == 9) ? 12 : 9)) {
+    if (AutoDetectDrive2(FILE_SYSTEM_TYPE_NONE, (DefaultBytesPerSectorShift == 9) ? 12 : 9)) {
         detectedBytesPerSectorShift = (DefaultBytesPerSectorShift == 9) ? 12 : 9;
     }
 }
+
+// IF THAT FAILS, DETECT IF THE IMAGE IS MBR-BASED
 
 local BYTE bps_shift <hidden=true> = 9;
 // didn't work with either 512 or 4096 bytes per sector...
