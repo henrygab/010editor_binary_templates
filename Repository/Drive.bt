@@ -4879,17 +4879,9 @@ local BYTE detectedBytesPerSectorShift = 0;
 // Call DetectAndAddFileSystem() with the preferred  file system type for that ID.
 //     
 
-// Parsing the above, it can be seen that this is essentially doing the following:
-// FS_REC( preferred = none, lba = 0, sectorSize = 512 );
-// FS_REC( preferred = none, lba = 0, sectorSize = 4k  );
-// Parse partition tables to get tuples of:
-//         system ID, partitionLBA, sectorSize
-// Which converts to:
-//         preferred, partitionLBA, sectorSize)
 // SADLY: 010Editor does not support declaring 'local struct' instances, where it's just memory allocated for the struct.
 //        Thus, a routine that parses the partition tables must simply add instances to three variables at a time.
 //        THIS SUCKS, but can later be easily updated when local struct support is added, and is the "right" design...
-//        WORSE, it appears cannot dynamically add instances for local variables (building an array "on-demand"...  Sigh.
 //        I guess we'll just have a hard-coded maximum here...
 //
 
@@ -5009,9 +5001,9 @@ boolean ParseMBR() {
                 tmpPartitionLocation *= BytesPerSectorShiftToBytesPerSector(SupportedBytesPerSectorShift[j]);
                 Printf("ParseMBR: [%d] partition location calculated as %08xh\r\n", i, tmpPartitionLocation);
                 FSeek(tmpPartitionLocation);
-                //if ( !PotentialPartitionAlreadyExists(tmpPartitionLocation, SystemID[i], SupportedBytesPerSectorShift[j]) ) {
+                if ( !PotentialPartitionAlreadyExists(tmpPartitionLocation, SystemID[i], SupportedBytesPerSectorShift[j]) ) {
                     ParsePartitionTableEntry(SystemID[i], SupportedBytesPerSectorShift[j]);
-                //}
+                }
                 j++;
             }
         }
@@ -5067,88 +5059,3 @@ for (qq_i = 0; qq_i < qq_PotentialPartitionCount; qq_i++) {
 }
 
 return;
-
-Printf("END NEW CODE ****************************************************************************** \r\n");
-
-
-// FIRST ATTEMPT TO DETECT FILE SYSTEM WITHOUT PARTITIONS:
-
-// detect using 512 byte sectors first
-if (!detectedBytesPerSectorShift) {
-    if (DetectAndAddFileSystem(FILE_SYSTEM_TYPE_NONE, DefaultBytesPerSectorShift)) {
-        detectedBytesPerSectorShift = DefaultBytesPerSectorShift;
-    }
-}
-// then try again using 4k sectors
-if (!detectedBytesPerSectorShift) {
-    if (DetectAndAddFileSystem(FILE_SYSTEM_TYPE_NONE, (DefaultBytesPerSectorShift == 9) ? 12 : 9)) {
-        detectedBytesPerSectorShift = (DefaultBytesPerSectorShift == 9) ? 12 : 9;
-    }
-}
-
-// IF THAT FAILS, DETECT IF THE IMAGE IS MBR-BASED
-
-local BYTE bps_shift <hidden=true> = 9;
-// didn't work with either 512 or 4096 bytes per sector...
-// try MBR...
-if (!detectedBytesPerSectorShift)
-{
-    // Auto detect the MBR
-    // BUGBUG-4kn -- If MBR, how to detect 4k sector size?
-    //           Why?  how else to calculate proper offset for partition?
-    local unsigned short mbr_boot_ok <hidden=true> = 0;
-    local unsigned short i <hidden=true>;
-    local PARTITION_SYSTEMID SystemID[4];
-    local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
-    local boolean SystemID_AutoDetectDrive_Result[4] = { 0x777, 0x777, 0x777, 0x777 };
-    local FILE_SYSTEM_TYPE PreferredFS[4] = { FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE, FILE_SYSTEM_TYPE_NONE };
-    local quad tmpPartitionLocation;
-
-    for ( i=0; i<4; i++ )
-    {
-        // Check BootIndicator and SystemID
-        BootIndicator[i] = ReadUByte( 0x1BE + i*10h );
-        SystemID[i]      = ReadUByte( 0x1C2 + i*10h );
-        // only parse when:
-        // BOTH a valid boot indicator (0x00 or 0x80)
-        // AND  when the partition is *not* listed as an empty partition
-        if( (BootIndicator[i] == SYSTEM_PARTITION || BootIndicator[i] == NOBOOT) &&
-            (SystemID[i] != PARTITION_SYSTEMID_EMPTY) )
-        {
-            // If the above holds true, then we presume this is an MBR-based media
-            // and thus initialize the MBR structure if not already having done so.
-            if ( mbr_boot_ok == 0 )
-            {
-                FSeek(0);
-                MASTER_BOOT_RECORD boot_mbr <bgcolor=cLtPurple>;
-                mbr_boot_ok = 1;
-            }
-
-            // Jump to Partition using boot_mbr structure definition of partition
-            // BUGBUG-4kn -- magic required here to support 4k sectors
-            tmpPartitionLocation = boot_mbr.partitions[i].RelativeSector * (INT64)DefaultBytesPerSector;
-            FSeek(tmpPartitionLocation);
-            
-            // If the drive already exists (e.g., MBR+GPT both listing partitions)
-            // then do not add the drive again
-            if( !DriveAlreadyExists(FTell()) )
-            {
-                PreferredFS[i] = PreferredFileSystemTypeFromPartitionSystemID(SystemID[i]);
-                SystemID_AutoDetectDrive_Result[i] = AutoDetectDrive(SystemID[i], DefaultBytesPerSectorShift);
-                if(!SystemID_AutoDetectDrive_Result[i])
-                {
-                    FSeek(tmpPartitionLocation); // AutoDetectDrive() may have position-altering side effect....
-                    DRIVE_NOT_SUPPORTED drive( bps_shift);
-                }
-            }
-        }
-    }
-
-    // Could not find MBR - drive is not supported
-    if( !mbr_boot_ok )
-    {
-        FSeek(0);
-        DRIVE_NOT_SUPPORTED drive( bps_shift);
-    }
-}
-
