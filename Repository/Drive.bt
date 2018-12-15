@@ -45,8 +45,6 @@
 //------------------------------------------------
 LittleEndian();
 
-local const ushort MAX_POTENTIAL_PARTITION_LOCATIONS = 0x40;
-
 
 typedef enum <int> {
     boolean_false = 0,
@@ -54,6 +52,10 @@ typedef enum <int> {
     boolean_true_negative_one = -1,
     boolean_just_use_true_and_false = 0xbaadf00d
 } boolean;
+
+local const ushort MAX_POTENTIAL_PARTITION_LOCATIONS <hidden=true> = 0x40;
+local const boolean IFS_VARIABLE_LENGTH_STRUCTURE    <hidden=true> = false;
+
 
 local int NumDrives = 0;
 
@@ -101,10 +103,7 @@ local int NumDrives = 0;
 // This last option is the design currently being implemented.
 // 
 
-local const BYTE  SupportedBytesPerSectorShift[2] = { 9, 12 };
-
-local const QUAD  DefaultBytesPerSector          <hidden=true> = 512;
-local const BYTE  DefaultBytesPerSectorShift     <hidden=true> = 9;
+local const BYTE  SupportedBytesPerSectorShift[2] <hidden=true> = { 9, 12 };
 
 boolean IsExactlyOneBitSet( UQUAD value ) {  return 0 == (value & (value-1)); }
 BYTE BytesPerSectorToBytesPerSectorShift(DWORD BytesPerSector) {
@@ -717,7 +716,6 @@ string ReadFILE_SYSTEM_TYPE(const FILE_SYSTEM_TYPE &type) {
 //################################################################
 // IFS Drives
 //################################################################
-local const boolean IFS_VARIABLE_LENGTH_STRUCTURE <hidden=true> = false;
 
 typedef struct (BYTE BytesPerSectorShift) { // see FILE_SYSTEM_RECOGNITION_STRUCTURE from Microsoft docs
     local FILE_SYSTEM_TYPE FsType = FILE_SYSTEM_TYPE_IFS;  // to indicate the file system type of that drive
@@ -1021,66 +1019,66 @@ boolean IsValidExfatBootSector(const EXFAT_BOOT_SECTOR &boot) {
         if (boot.MustBeZero[i] != 0) { return false; }
     }
     if (boot.FileSystemRevisionMajor != 1) {
-        Printf("INVALID EXFAT (%08Xh): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
+        //Printf("INVALID EXFAT (%08Xh): File system revision major number is not 1 (was 0x%02x)\r\n", startof(boot), boot.FileSystemRevisionMajor);
         return false;
     }
     if ((boot.BytesPerSectorShift < 9) || (boot.BytesPerSectorShift > 12)) {
-        Printf("INVALID EXFAT (%08Xh): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
+        //Printf("INVALID EXFAT (%08Xh): Bytes per sector shift value invalid (0x%02x)\r\n", startof(boot));
         return false;
     }
     // range from 0 .. 25-BytesPerSectorShift (32MB is maximum cluster size)
     if (boot.SectorsPerClusterShift > 25-boot.BytesPerSectorShift) {
-        Printf("INVALID EXFAT (%08Xh): SectorsPerClusterShift value (%02xh) too large for BytesPerSectorShift (%02xh)\r\n", startof(boot), boot.SectorsPerClusterShift, boot.BytesPerSectorShift);
+        //Printf("INVALID EXFAT (%08Xh): SectorsPerClusterShift value (%02xh) too large for BytesPerSectorShift (%02xh)\r\n", startof(boot), boot.SectorsPerClusterShift, boot.BytesPerSectorShift);
         return false;
     }
     // NumberOfSectors must be at least 2^20 / 2^BytesPerSectorShift == 2 ^ ( 20-BytesPerSectorShift)
     if (minimumSectors > boot.NumberOfSectors) {
-        Printf("INVALID EXFAT (%08Xh): Volume too small (Min %08Xh sectors, but only %08Xh indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
+        //Printf("INVALID EXFAT (%08Xh): Volume too small (Min %08Xh sectors, but only %08Xh indicated)\r\n", startof(boot), minimumSectors, boot.NumberOfSectors);
         return false;
     }
     // FirstFatSectorOffset must be in range 24 .. DataAreaSectorOffset - (SectorsPerFat * NumberOfFatTables)
     if (boot.FirstFatSectorOffset >= boot.DataAreaSectorOffset) {
-        Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) must be before Data Area offset (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, boot.DataAreaSectorOffset);
+        //Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) must be before Data Area offset (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, boot.DataAreaSectorOffset);
         return false;
     }
     if (boot.FirstFatSectorOffset < 24) {
-        Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) smaller than minimum (24)\r\n", startof(boot), boot.FirstFatSectorOffset);
+        //Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) smaller than minimum (24)\r\n", startof(boot), boot.FirstFatSectorOffset);
         return false;
     }
     if (boot.FirstFatSectorOffset > lastPossibleSectorForFirstFat) {
-        Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) larger than last possible (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, lastPossibleSectorForFirstFat);
+        //Printf("INVALID EXFAT (%08Xh): First FAT sector (%d) larger than last possible (%d)\r\n", startof(boot), boot.FirstFatSectorOffset, lastPossibleSectorForFirstFat);
         return false;
     }
     // verify size of FAT table
     if (entriesPerFat - 2 < boot.CountOfDataClusters) {
-        Printf("INVALID EXFAT (%08Xh): Sectors per FAT (%d) can store (%d) entries, needs to store %d\r\n", startof(boot), entriesPerFat - 2, boot.CountOfDataClusters);
+        //Printf("INVALID EXFAT (%08Xh): Sectors per FAT (%d) can store (%d) entries, needs to store %d\r\n", startof(boot), entriesPerFat - 2, boot.CountOfDataClusters);
         return false;
     }
     if (boot.RootClusterIndex < 2) {
-        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be less than 2 (is %08Xh)\r\n", startof(boot), boot.RootClusterIndex);
+        //Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be less than 2 (is %08Xh)\r\n", startof(boot), boot.RootClusterIndex);
         return false;
     }
     if (boot.RootClusterIndex > boot.CountOfDataClusters+1) {
-        Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be more than %08Xh (is %08Xh)\r\n", startof(boot), boot.CountOfDataClusters+1, boot.RootClusterIndex);
+        //Printf("INVALID EXFAT (%08Xh): Root cluster index cannot be more than %08Xh (is %08Xh)\r\n", startof(boot), boot.CountOfDataClusters+1, boot.RootClusterIndex);
         return false;
     }
 
     // verify NumberOfSectors against SectorsPerClusterShift, CountOfDataClusters, DataAreaSectorOffset
     if (boot.NumberOfSectors < boot.DataAreaSectorOffset) {
-        Printf("INVALID EXFAT (%08Xh): DataAreaSectorOffset (%08Xh) must be within numberOfSectors (%08Xh)\r\n", startof(boot), boot.NumberOfSectors, boot.DataAreaSectorOffset);
+        //Printf("INVALID EXFAT (%08Xh): DataAreaSectorOffset (%08Xh) must be within numberOfSectors (%08Xh)\r\n", startof(boot), boot.NumberOfSectors, boot.DataAreaSectorOffset);
         return false;
     }
     if (maximumPossibleClusters < boot.CountOfDataClusters) {
-        Printf("INVALID EXFAT (%08Xh): Volume too small for cluster count (%08Xh < %08Xh)\r\n", startof(boot), maximumPossibleClusters, boot.DataAreaSectorOffset);
+        //Printf("INVALID EXFAT (%08Xh): Volume too small for cluster count (%08Xh < %08Xh)\r\n", startof(boot), maximumPossibleClusters, boot.DataAreaSectorOffset);
         return false;
     }
 
     if (boot.NumberOfFatTables != 1 && boot.NumberOfFatTables != 2) {
-        Printf("INVALID EXFAT (%08Xh): Number of fat tables must be 1 or 2 (was %d)\r\n", startof(boot), boot.NumberOfFatTables);
+        //Printf("INVALID EXFAT (%08Xh): Number of fat tables must be 1 or 2 (was %d)\r\n", startof(boot), boot.NumberOfFatTables);
         return false;
     }
     if (boot.NumberOfFatTables == 1 && boot.VolumeFlags.ActiveFatIndex == 1) {
-        Printf("INVALID EXFAT (%08Xh): ActiveFatIndex cannot be set when only one FAT\r\n", startof(boot));
+        //Printf("INVALID EXFAT (%08Xh): ActiveFatIndex cannot be set when only one FAT\r\n", startof(boot));
         return false;
     }
 
@@ -1101,7 +1099,7 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
     // Boot region's internal validation...
     if (!boot_region.Boot.InternallyValid) {
         if (!IsValidExfatBootSector(boot_region.Boot)) {
-            Printf("INVALID EXFAT (%08Xh): Boot region boot sector internally invalid\r\n", startof(boot_region));
+            //Printf("INVALID EXFAT (%08Xh): Boot region boot sector internally invalid\r\n", startof(boot_region));
             return false;
         } else {
             boot_region.Boot.InternallyValid = true;
@@ -1109,18 +1107,18 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
     }
     for (i = 0; i < 8; i++) {
         if (!boot_region.ExtendedBoot[i].InternallyValid) {
-            Printf("INVALID EXFAT (%08Xh):  ExtendedBoot[%d] internally invalid\r\n", startof(boot_region), i);
+            //Printf("INVALID EXFAT (%08Xh):  ExtendedBoot[%d] internally invalid\r\n", startof(boot_region), i);
             return false;
         }
     }
     if (!boot_region.ChecksumSector.InternallyValid) {
-        Printf("INVALID EXFAT (%08Xh): Boot region checksum sector internally invalid\r\n", startof(boot_region));
+        //Printf("INVALID EXFAT (%08Xh): Boot region checksum sector internally invalid\r\n", startof(boot_region));
         return false;
     }
     
     expected_checksum = CalculateExpectedExfatBootRegionChecksum(boot_region);
     if (boot_region.ChecksumSector.Checksum[0] != expected_checksum) {
-        Printf("INVALID EXFAT (%08Xh): Boot region checksum value (%08Xh) does not match calculated value (%08Xh)\r\n", startof(boot_region), boot_region.ChecksumSector.Checksum[0], expected_checksum);
+        //Printf("INVALID EXFAT (%08Xh): Boot region checksum value (%08Xh) does not match calculated value (%08Xh)\r\n", startof(boot_region), boot_region.ChecksumSector.Checksum[0], expected_checksum);
         return false;
     }
     // Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
@@ -1278,7 +1276,7 @@ typedef struct (BYTE BytesPerSectorShift) {
     checksumCopies = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift) / 4;
     for (i = 0; InternallyValid && i < checksumCopies; i++) {
         if (Checksum[0] != Checksum[i]) {
-            Printf("INVALID EXFAT (%08Xh): Checksum sector value differs at index %xh, value %08Xh != %08Xh\r\n", start, i, Checksum[0], Checksum[i]);
+            //Printf("INVALID EXFAT (%08Xh): Checksum sector value differs at index %xh, value %08Xh != %08Xh\r\n", start, i, Checksum[0], Checksum[i]);
             InternallyValid = 0;
         }
     }
@@ -2897,7 +2895,7 @@ typedef struct
 //  be contiguous on disk, and this is the smallest supported sector size.
 int SizeFAT_FILE_DATA( FAT_FILE_DATA &dir )
 {
-    return DefaultBytesPerSector;
+    return 512;
 }
 
 // FAT Directory Entry List
@@ -4476,7 +4474,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
     local int64 startPos <hidden=true> = FTell();
     local DWORD bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
    
-    Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
+    //Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
 
     // todo: add fs recognition code
     FSeek(startPos);
@@ -4627,21 +4625,6 @@ FILE_SYSTEM_TYPE PreferredFileSystemTypeFromPartitionSystemID( int SystemID )
     return preferredType;
 }
 
-// Used to prevent drives from being defined twice - this could
-// happen if a drive is listed in the MBR and the EFI table
-int DriveAlreadyExists( int64 pos )
-{
-    local int i <hidden=true>;
-    for( i = 0; i < NumDrives; i++ )
-    {
-        if( startof(drive[i]) == pos )
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 boolean DetectAndAddFileSystem( FILE_SYSTEM_TYPE preferredFilesSystems, BYTE BytesPerSectorShift )
 {
     local int    i <hidden=true>;
@@ -4650,14 +4633,14 @@ boolean DetectAndAddFileSystem( FILE_SYSTEM_TYPE preferredFilesSystems, BYTE Byt
     local DWORD  bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
     local FILE_SYSTEM_TYPE detected <hidden=true> = FILE_SYSTEM_TYPE_NONE;
 
-    Printf("ADD2() Enter: startPos = %08x, BytesPerSectorShift == %d, preferredFS == %s\r\n", startPos, BytesPerSectorShift, ReadFILE_SYSTEM_TYPE(preferredFilesSystems));
+    //Printf("ADD2() Enter: startPos = %08x, BytesPerSectorShift == %d, preferredFS == %s\r\n", startPos, BytesPerSectorShift, ReadFILE_SYSTEM_TYPE(preferredFilesSystems));
 
     FSeek(startPos); // reset after calling FSRec()
     if (preferredFilesSystems != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
         detected = FileSystemRecognizer(preferredFilesSystems, BytesPerSectorShift);
         if (detected == FILE_SYSTEM_TYPE_NONE) {
-            Printf("ADD2()      : Preferred type not detected, trying other types\r\n");
+            //Printf("ADD2()      : Preferred type not detected, trying other types\r\n");
         }
     }
     FSeek(startPos); // reset after calling FSRec()
@@ -4667,7 +4650,7 @@ boolean DetectAndAddFileSystem( FILE_SYSTEM_TYPE preferredFilesSystems, BYTE Byt
     }
     FSeek(startPos); // reset after calling FSRec()
     if (detected == FILE_SYSTEM_TYPE_NONE) {
-        Printf("ADD2()      : No drive due to no valid detected file system at offset %08Xh, %d\r\n", startPos, BytesPerSectorShift);
+        //Printf("ADD2()      : No drive due to no valid detected file system at offset %08Xh, %d\r\n", startPos, BytesPerSectorShift);
         return false; // not found
     }
     FSeek(startPos); // reset after calling FSRec()
@@ -4729,15 +4712,15 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
 //        I guess we'll just have a hard-coded maximum here...
 //
 
-local int  qq_PotentialPartitionCount = 0;
-local quad qq_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS];
-local int  qq_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS];
-local BYTE qq_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS];
+local int  qq_PotentialPartitionCount <hidden=true> = 0;
+local quad qq_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
+local int  qq_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
+local BYTE qq_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
 
-local int  ss_NotSupportedCount = 0;
-local quad ss_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS];
-local int  ss_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS];
-local BYTE ss_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS];
+local int  ss_NotSupportedCount <hidden=true> = 0;
+local quad ss_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
+local int  ss_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
+local BYTE ss_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS] <hidden=true>;
 
 boolean UnsupportedPartitionAlreadyExists(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
     local int t = 0;
@@ -4752,7 +4735,7 @@ boolean UnsupportedPartitionAlreadyExists(quad filePosition, int SystemID, BYTE 
 }
 void AddDriveNotSupportedLocation(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
     if (UnsupportedPartitionAlreadyExists(filePosition, SystemID, BytesPerSectorShift)) { return; }
-    Printf("Found: DriveNotSupported at %08xh, systemID %02xh, bps_shift %d\r\n", filePosition, SystemID, BytesPerSectorShift);
+    //Printf("Drive: DriveNotSupported at %08xh, systemID %02xh, bps_shift %d\r\n", filePosition, SystemID, BytesPerSectorShift);
     Assert(ss_NotSupportedCount < MAX_POTENTIAL_PARTITION_LOCATIONS);
     ss_FilePosition        [ss_NotSupportedCount] = filePosition;
     ss_SystemID            [ss_NotSupportedCount] = SystemID;
@@ -4771,7 +4754,7 @@ boolean PotentialPartitionAlreadyExists(quad filePosition, int SystemID, BYTE By
     return false;
 }
 void AddPotentialPartitionLocation(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
-    Printf("Found: Potential partition at %08xh, systemID %02xh, bps_shift %d\r\n", filePosition, SystemID, BytesPerSectorShift);
+    //Printf("Found: Potential partition at %08xh, systemID %02xh, bps_shift %d\r\n", filePosition, SystemID, BytesPerSectorShift);
     Assert(qq_PotentialPartitionCount < MAX_POTENTIAL_PARTITION_LOCATIONS);
     qq_FilePosition        [qq_PotentialPartitionCount] = filePosition;
     qq_SystemID            [qq_PotentialPartitionCount] = SystemID;
@@ -4785,7 +4768,7 @@ void ParsePartitionTableEntry(PARTITION_SYSTEMID SystemID, BYTE BytesPerSectorSh
     local int64  newStart <hidden=true>;
     local DWORD  bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
 
-    Printf("PPTE: Enter %08xh, SystemID %02xh, bps_shift %d\r\n", startPos, SystemID, BytesPerSectorShift);
+    //Printf("PPTE: Enter %08xh, SystemID %02xh, bps_shift %d\r\n", startPos, SystemID, BytesPerSectorShift);
 
     // Add container partitions as containers (even if not 100% sure they're correct),
     // and recursively call this function for each valid contained partition.
@@ -4818,7 +4801,7 @@ void ParsePartitionTableEntry(PARTITION_SYSTEMID SystemID, BYTE BytesPerSectorSh
         i = 0;
         while( exists( efi.partitions[i] ) ) {
             newStart = efi.partitions[i].FirstLBA * bytesPerSector;
-            Printf("PPTE: Adding GPT parition entry %d\r\n", i);
+            //Printf("PPTE: Adding GPT parition entry %d\r\n", i);
             AddPotentialPartitionLocation(newStart, -1, BytesPerSectorShift);
             i++;
         }
@@ -4838,7 +4821,7 @@ boolean ParseMBR() {
 
     local uchar BootIndicator[4] = { 0x77, 0x77, 0x77, 0x77 };
     local PARTITION_SYSTEMID SystemID[4];
-    Printf("ParseMBR: Enter\r\n");
+    //Printf("ParseMBR: Enter\r\n");
 
     // Presume that there is an MBR
     for ( i=0; i<4; i++ )
@@ -4846,7 +4829,7 @@ boolean ParseMBR() {
         // Read the BootIndicator and SystemID values directly
         BootIndicator[i] = ReadUByte( 0x1BE + i*10h );
         SystemID[i]      = ReadUByte( 0x1C2 + i*10h );
-        Printf("ParseMBR: [%d] BootIndicator %02xh  SystemID %02x\r\n", i, BootIndicator[i], SystemID[i]);
+        //Printf("ParseMBR: [%d] BootIndicator %02xh  SystemID %02x\r\n", i, BootIndicator[i], SystemID[i]);
 
         // only parse when:
         //        a valid boot indicator (0x00 or 0x80)
@@ -4856,7 +4839,7 @@ boolean ParseMBR() {
         {
             if ( mbr_boot_ok == 0 )
             {
-                Printf("ParseMBR: [%d] Found a partition, adding MASTER_BOOT_RECORD\r\n", i);
+                //Printf("ParseMBR: [%d] Found a partition, adding MASTER_BOOT_RECORD\r\n", i);
                 FSeek(0);
                 MASTER_BOOT_RECORD boot_mbr <bgcolor=cLtPurple>;
                 mbr_boot_ok = 1;
@@ -4864,10 +4847,10 @@ boolean ParseMBR() {
             // Parse the MBR partition for all supported sector sizes
             j = 0;
             while (exists(SupportedBytesPerSectorShift[j])) {
-                Printf("ParseMBR: [%d] Parsing partition table using sector size %d\r\n", i, SupportedBytesPerSectorShift[j]);
+                //Printf("ParseMBR: [%d] Parsing partition table using sector size %d\r\n", i, SupportedBytesPerSectorShift[j]);
                 tmpPartitionLocation = boot_mbr.partitions[i].RelativeSector;
                 tmpPartitionLocation *= BytesPerSectorShiftToBytesPerSector(SupportedBytesPerSectorShift[j]);
-                Printf("ParseMBR: [%d] partition location calculated as %08xh\r\n", i, tmpPartitionLocation);
+                //Printf("ParseMBR: [%d] partition location calculated as %08xh\r\n", i, tmpPartitionLocation);
                 FSeek(tmpPartitionLocation);
                 if ( !PotentialPartitionAlreadyExists(tmpPartitionLocation, SystemID[i], SupportedBytesPerSectorShift[j]) ) {
                     ParsePartitionTableEntry(SystemID[i], SupportedBytesPerSectorShift[j]);
@@ -4876,15 +4859,15 @@ boolean ParseMBR() {
             }
         }
     }
-    Printf("ParseMBR: exit (%d)\r\n", mbr_boot_ok);
+    //Printf("ParseMBR: exit (%d)\r\n", mbr_boot_ok);
     
     return mbr_boot_ok;
 }
 
 
 // Detect partition-free file system image
-Printf("\r\nDRIVE: Detecting partition-free file system image\r\n");
-local int i;
+Printf("\r\nDRIVE: Detecting partition-free file system image\r\n\r\n");
+local int i <hidden=true>;
 while (exists(SupportedBytesPerSectorShift[i])) {
     if (DetectAndAddFileSystem(FILE_SYSTEM_TYPE_NONE, SupportedBytesPerSectorShift[i])) {
         Printf("DRIVE: Success with partition-free detection (sector size == %d).\r\n", BytesPerSectorShiftToBytesPerSector(SupportedBytesPerSectorShift[i]));
@@ -4893,10 +4876,10 @@ while (exists(SupportedBytesPerSectorShift[i])) {
     i++;
 }
 
-local int qq_j = 0;
-Printf("\r\nDRIVE: Attempting to parse the MBR\r\n");
+local int qq_j <hidden=true> = 0;
+Printf("\r\nDRIVE: Attempting to parse the MBR\r\n\r\n");
 if (!ParseMBR()) {
-    Printf("DRIVE: No supported file systems detected.\r\n");
+    Printf("DRIVE: Failed to parse MBR -- no supported file systems detected.\r\n");
     qq_j = 0;
     while ( exists(SupportedBytesPerSectorShift[qq_j]) ) {
         FSeek(0);
@@ -4906,10 +4889,12 @@ if (!ParseMBR()) {
     return;
 }
 
+// TODO: Sort potential partitions... because it's the right thing to do.
 
-Printf("\r\nDRIVE: found up to %d potential partitions...\r\n", qq_PotentialPartitionCount);
-local int qq_i = 0;
-local FILE_SYSTEM_TYPE preferred;
+
+Printf("\r\nDRIVE: found up to %d potential partitions...\r\n\r\n", qq_PotentialPartitionCount);
+local int qq_i <hidden=true> = 0;
+local FILE_SYSTEM_TYPE preferred <hidden=true>;
 for (qq_i = 0; qq_i < qq_PotentialPartitionCount; qq_i++) {
 
     FSeek(qq_FilePosition[qq_i]);
@@ -4933,9 +4918,9 @@ for (qq_i = 0; qq_i < qq_PotentialPartitionCount; qq_i++) {
 
 }
 
-local int qq_k = 0;
-local int qq_found4k = 0;
-local int qq_found512 = 0;
+local int qq_k         <hidden=true> = 0;
+local int qq_found4k   <hidden=true> = 0;
+local int qq_found512  <hidden=true> = 0;
 while ( exists(drive[qq_k]) ) {
     if (exists(drive[qq_k].DriveBytesPerSectorShift)) {
         if (drive[qq_k].DriveBytesPerSectorShift == 9)       { qq_found512++; }
@@ -4946,7 +4931,7 @@ while ( exists(drive[qq_k]) ) {
     qq_k++;
 }
 
-local int qq_r = 0;
+local int qq_r <hidden=true> = 0;
 for (qq_r = 0; qq_r < ss_NotSupportedCount; qq_r++) {
     FSeek( ss_FilePosition[qq_r] );
     if ( ((qq_found4k >  qq_found512) && (ss_BytesPerSectorShift[qq_r] == 12)) ||
@@ -4956,4 +4941,5 @@ for (qq_r = 0; qq_r < ss_NotSupportedCount; qq_r++) {
             DRIVE_NOT_SUPPORTED drive( ss_BytesPerSectorShift[qq_r] );
     }
 }
+
 return;
