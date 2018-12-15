@@ -45,7 +45,7 @@
 //------------------------------------------------
 LittleEndian();
 
-local const ushort MAX_POTENTIAL_PARTITION_LOCATIONS = 0x100;
+local const ushort MAX_POTENTIAL_PARTITION_LOCATIONS = 0x40;
 
 
 typedef enum <int> {
@@ -4817,67 +4817,13 @@ if( ReadUShort(510)!=0xAA55 && ReadUByte(1024) != 'H' )
     return -1;
 }
 
-// Check for different drive types
-// TODO: light-weight function that detects 4k MBR, 4k exFAT, etc. ... to skip 512 byte parse attempts?
-// First, check at the default sector size.
-// Next, check at the other of ( 512, 4096 ).
-
-
-// TODO: Consider how one might store array of tuples.
-// Then, store them for <quad pos, byte sectorShift> for list of UNSUPPORTED_DRIVE locations,
-// rather than actually adding them during AutoDetectDrive().
-// This would allow post-detection addition of UNSUPPORTED_DRIVE of the correct sector size,
-// if any supported file systems were found....
-
-local BYTE detectedBytesPerSectorShift = 0;
-
 // WHAT THE CODE PATH LOOKS LIKE TODAY:
 ///////////////////////////////////////////
 // 1. Detect partition-less file system by calling AutoDetectDrive(-1,  9)
 // 2. Detect partition-less file system by calling AutoDetectDrive(-1, 12)
 // 3. If either of the above worked, then end processing.
-// 4. Detect and parse MBR-based partition (this also parses GPT, which defines an MBR wrapper partition)
-//    a. MBR has up to four partitions...
-//    b. Eligible partitions are those which are SYSTEM_PARTITION or NOBOOT, and which are **NOT** PARTITION_SYSTEMID_EMPTY
-//    c. If there are ANY eligible partitions, add MASTER_BOOT_RECORD structure at file offset zero
-//    c. For each eligible partition:
-//       i.   FSeek() to the partition
-//       ii.  check if drive already exists (to avoid duplicates from hybrid MBR/GPT
-//       iii. determine preferred file system type from the partition system ID (for logging only)
-//       iv.  call AutoDetectDrive( system ID, bps_shift )
-//            *** NOTE: THIS IS THE ONLY ENTRY POINT AT THIS LEVEL WITH A SYSTEM ID SPECIFIED ***
-//       v.   If AutoDetectDrive() failed, adds DRIVE_NOT_SUPPORTED at that position
-//
-// AutoDetectDrive(-1, *) --> DetectAndAddFileSystem() above...
-//     
-// AutoDetectDrive(SystemID, *) does the following:
-//
-// For explicitly unsupported SystemIDs:
-//      add DRIVE_NOT_SUPPORTED drive(BytesPerSectorShift);
-//      return FALSE
-//
-// For the following systemIDs
-//     SystemID == PARTITION_SYSTEMID_EXTENDED
-//     SystemID == PARTITION_SYSTEMID_WIN95_EXT_PARTITION
-//     SystemID == PARTITION_SYSTEMID_DRDOS_SECURED_EXTENDED
-//     Parse the parititon table
-//         if a drive already exists at that location, do nothing
-//         call AutoDetectDrive(PartitionSystemID, *) -- RECURSIVE!!!
-//         if that recursive call to ADD() returned FALSE,
-//             add DRIVE_NOT_SUPPORTED for that location
-//     return TRUE (regardless of result from partition parsing)
-//
-// For systemID of PARTITION_SYSTEMID_LEGACY_MBR_EFI_HEADER
-//     add EFI_PARTITION structure (aka GPT partition)
-//     for each partition in EFI_PARTITION...
-//         Seek to the partition
-//         call AutoDetectDrive(-1,*) -- Can replace with call to DetectAndAddFileSystem()
-//         if that call to ADD() returned FALSE,
-//             add DRIVE_NOT_SUPPORTED for that location
-//     return TRUE (even if zero EFI partitions existed)
-//
-// Call DetectAndAddFileSystem() with the preferred  file system type for that ID.
-//     
+// 4. Parse MBR to find all potential partitions (both 512 byte and 4k added), including container partitions
+// 5. Detect and add the file systems for each potential partition
 
 // SADLY: 010Editor does not support declaring 'local struct' instances, where it's just memory allocated for the struct.
 //        Thus, a routine that parses the partition tables must simply add instances to three variables at a time.
@@ -4885,18 +4831,35 @@ local BYTE detectedBytesPerSectorShift = 0;
 //        I guess we'll just have a hard-coded maximum here...
 //
 
-
 local int  qq_PotentialPartitionCount = 0;
 local quad qq_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS];
 local int  qq_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS];
 local BYTE qq_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS];
 
-// Find all the potential file system locations by parsing the partition tables...
-// This function modifies the four global qq_* variables above.
+local int  ss_NotSupportedCount = 0;
+local quad ss_FilePosition        [MAX_POTENTIAL_PARTITION_LOCATIONS];
+local int  ss_SystemID            [MAX_POTENTIAL_PARTITION_LOCATIONS];
+local BYTE ss_BytesPerSectorShift [MAX_POTENTIAL_PARTITION_LOCATIONS];
 
+boolean UnsupportedPartitionAlreadyExists(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
+    local int t = 0;
+    for (t = 0; t < ss_NotSupportedCount; t++) {
+        if ((ss_FilePosition        [t] == filePosition       ) &&
+            (ss_SystemID            [t] == SystemID           ) &&
+            (ss_BytesPerSectorShift [t] == BytesPerSectorShift)) {
+            return t; // non-zero, also the index
+        }
+    }
+    return false;
+}
 void AddDriveNotSupportedLocation(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
+    if (UnsupportedPartitionAlreadyExists(filePosition, SystemID, BytesPerSectorShift)) { return; }
     Printf("Found: DriveNotSupported at %08xh, systemID %02xh, bps_shift %d\r\n", filePosition, SystemID, BytesPerSectorShift);
-    // TODO: push onto temporary list, similar to qq_*
+    Assert(ss_NotSupportedCount < MAX_POTENTIAL_PARTITION_LOCATIONS);
+    ss_FilePosition        [ss_NotSupportedCount] = filePosition;
+    ss_SystemID            [ss_NotSupportedCount] = SystemID;
+    ss_BytesPerSectorShift [ss_NotSupportedCount] = BytesPerSectorShift;
+    ss_NotSupportedCount++;
 }
 boolean PotentialPartitionAlreadyExists(quad filePosition, int SystemID, BYTE BytesPerSectorShift) {
     local int t = 0;
@@ -5045,24 +5008,18 @@ if (!ParseMBR()) {
     return;
 }
 
-// otherwise, found some potential partitions that can be parsed....
-// TODO: select preferred sector size?  optimization... not critical
-
 Printf("\r\nDRIVE: found up to %d potential partitions...\r\n", qq_PotentialPartitionCount);
-
-
 local int qq_i = 0;
 local FILE_SYSTEM_TYPE preferred;
-// TODO: 
 for (qq_i = 0; qq_i < qq_PotentialPartitionCount; qq_i++) {
     FSeek(qq_FilePosition[qq_i]);
     preferred = PreferredFileSystemTypeFromPartitionSystemID(qq_SystemID[qq_i]);
-
-// rename AutoDetectDrive2 to DetectAndAddFileSystem()
     if (!DetectAndAddFileSystem(preferred, qq_BytesPerSectorShift[qq_i])) {
-//        Printf("Early Exit -- SUCCESS at index %d\r\n", qq_i);
-//        return;
+        AddDriveNotSupportedLocation(qq_FilePosition[qq_i], qq_SystemID[qq_i], qq_BytesPerSectorShift[qq_i]);
     }
 }
+
+// TODO: if still have not found any drives, add the detected DriveNotSupportedLocations()....
+// TODO: If found some drives, add any DriveNotSupported locations ***with same sector size***, if their file position isn't already the start of an existing Drive variable.
 
 return;
