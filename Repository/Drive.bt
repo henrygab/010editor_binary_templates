@@ -1106,7 +1106,7 @@ boolean IsValidExfatBootRegion(const EXFAT_BOOT_REGION &boot_region) {
         Printf("INVALID EXFAT (%08Xh): Boot region checksum value (%08Xh) does not match calculated value (%08Xh)\r\n", startof(boot_region), boot_region.ChecksumSector.Checksum[0], expected_checksum);
         return false;
     }
-    Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
+    // Printf("*** VALID EXFAT BOOT REGION (%08Xh): \r\n",  startof(boot_region));
     return true;
 }
 boolean IsValidClusterIndex(const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex)
@@ -1539,7 +1539,7 @@ typedef struct (BYTE BytesPerSectorShift) {
     EXFAT_BOOT_REGION boot_region(BytesPerSectorShift);
 
     for (i = 1; i >= 0; i--) {
-        Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
+        // Printf("EXFAT (%08Xh): Checking IsValidExfatBootRegion( boot_region[%d] ) ...\r\n", startof(this), i);
         if (IsValidExfatBootRegion(boot_region[i])) {
             boot_region[i].InternallyValid = 1;
             idx = i;
@@ -1620,7 +1620,7 @@ typedef struct (BYTE BytesPerSectorShift) {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-} EXFAT_DRIVE <open=true, optimize=false, size=512>;
+} EXFAT_DRIVE <open=true, optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
 
 
@@ -4380,6 +4380,64 @@ typedef union (BYTE BytesPerSectorShift)
 // Detect drive type
 //################################################################
 
+boolean fsrec_is_exfat_bootregion( quad startPosition, BYTE BytesPerSectorShift )
+{
+    local int i <hidden=true>;
+    local DWORD bytesPerSector = BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift);
+    local quad tmpOffset;
+
+    // 1. check for presence of "EXFAT   " at offset 0x3
+    local char name[] <hidden=true> = ReadString( startPosition + 3, 8);
+    if (name != "EXFAT   ") {
+        Printf("FSREC      : string 'EXFAT   ' not found at %xh\r\n", startPosition+3);
+        return false;
+    }
+    // 2. check bytes 11..63 are all zero
+    local char mustBeZero[53] <hidden=true>;
+    ReadBytes(mustBeZero, startPosition + 11, 53);
+    for (i = 0; i < 53; i++) {
+        if (mustBeZero[i] != 0) {
+            Printf("FSREC      : must-be-zero byte at offset %d was non-zero\r\n", i+11);
+            return false;
+        }
+    }
+    // 3. check BYTE at byte offset 108 matches BytesPerSectorShift
+    local byte boot_bps = ReadByte(startPosition+108);
+    if (boot_bps != BytesPerSectorShift) {
+        Printf("FSREC      : byte at offset 108 (%d) does not match BytesPerSectorShift (%d)\r\n", boot_bps, BytesPerSectorShift);
+        return false;
+    }
+    // 4. check boot sector signature at offset 510
+    local ushort boot_sector_signature = ReadUShort(startPosition+510); // this is always offset 510, even for 4k sectors
+    if (boot_sector_signature != 0xAA55) {
+        Printf("FSREC      : boot sector signature (%04x) is not 0xAA55\r\n", boot_sector_signature);
+        return false;
+    }
+    // 5. check extended boot sector signatures
+    local uint extended_boot_sector_signature;
+    tmpOffset = bytesPerSector - 4;
+    for (i = 1; i < 9; i++) {
+        tmpOffset += bytesPerSector;
+        extended_boot_sector_signature = ReadUInt(tmpOffset);
+        if (extended_boot_sector_signature != 0xAA550000) {
+            Printf("FSREC      : boot sector signature (%04x) is not 0xAA55 at position %xh\r\n", boot_sector_signature, tmpOffset);
+            return false;
+        }
+    }
+    // that's enough to be fairly sure it's exFAT and same sector size...
+    return true;
+}
+
+boolean fsrec_is_exfat( quad startPosition, BYTE BytesPerSectorShift )
+{
+    local int64 firstBootRegionStart <hidden=true>     = FTell();
+    local int64 secondBootRegionStart <hidden=true>    = FTell() + (12 * BytesPerSectorShiftToBytesPerSector(BytesPerSectorShift));
+
+    if (fsrec_is_exfat_bootregion(firstBootRegionStart,  BytesPerSectorShift)) { return true; }
+    if (fsrec_is_exfat_bootregion(secondBootRegionStart, BytesPerSectorShift)) { return true; }
+    return false;
+}
+
 // Call with appropriate enumeration value to limit the types
 // of file systems checked for.  Call with FILE_SYSTEM_TYPE_VALID_MASK
 // to detect any of the supported file systems.
@@ -4388,7 +4446,6 @@ typedef union (BYTE BytesPerSectorShift)
 //
 // HACKHACK: I would use a struct with bitfield enums, but
 //           local structs are not a supported feature as of v9.0.
-
 FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesPerSectorShift )
 {
     if (allowedTypes == FILE_SYSTEM_TYPE_NONE) return FILE_SYSTEM_TYPE_NONE;
@@ -4402,23 +4459,15 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
     //Printf("FSREC Enter: startPos = %08x, allowedTypes == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(allowedTypes));
 
     // todo: add fs recognition code
+    FSeek(startPos);
     if (((BytesPerSectorShift == 9) || (BytesPerSectorShift == 12)) &&
-        (allowedTypes & FILE_SYSTEM_TYPE_EXFAT)
+        (allowedTypes & FILE_SYSTEM_TYPE_EXFAT) && 
+        (fsrec_is_exfat(startPos, BytesPerSectorShift))
         ) {
-        FSeek(startPos);
-        //Printf("FSREC      : ? EXFAT_BOOT_SECTOR\r\n");
-        EXFAT_BOOT_REGION exfat_boot_region(BytesPerSectorShift) <hidden=true>;
-        EXFAT_BOOT_REGION exfat_boot_region(BytesPerSectorShift) <hidden=true>;
-        if (IsValidExfatBootRegion(exfat_boot_region[0])) {
-            Printf("FSREC      : Valid: exFAT first boot region\r\n");
-            result |= FILE_SYSTEM_TYPE_EXFAT;
-        } else if (IsValidExfatBootRegion(exfat_boot_region[1])) {
-            Printf("FSREC      : Valid: exFAT second boot region\r\n");
-            result |= FILE_SYSTEM_TYPE_EXFAT;
-        }
+        result |= FILE_SYSTEM_TYPE_EXFAT;
     }
+    FSeek(startPos);
     if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_ANY_FAT_MASK)) {
-        FSeek(startPos);
         //Printf("FSREC      : ? FAT_BOOTSECTOR\r\n");
         FAT_BOOTSECTOR fat_boot <hidden=true>;
         if (IsValidFatBootSector(fat_boot)) {
@@ -4428,8 +4477,8 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
             //Printf("FSREC      : FAT12/16/32 not valid\r\n");
         }
     }
+    FSeek(startPos);
     if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_NTFS)) {
-        FSeek(startPos);
         //Printf("FSREC      : ? NTFS_BOOTSECTOR\r\n");
         NTFS_BOOTSECTOR ntfs_boot <hidden=true>;
         if (IsValidNtfsBootSector(ntfs_boot)) {
@@ -4439,6 +4488,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
             //Printf("FSREC      : NTFS not valid\r\n");
         }
     }
+    FSeek(startPos);
     if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_HPFS)) {
         //Printf("FSREC      : ? HPFS\r\n");
         if (IsValidHfsBootSector(FTell())) {
@@ -4448,8 +4498,8 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
             //Printf("FSREC      : HPFS not valid\r\n");
         }
     }
+    FSeek(startPos);
     if ((BytesPerSectorShift == 9) && (allowedTypes & FILE_SYSTEM_TYPE_IFS)) {
-        FSeek(startPos);
         //Printf("FSREC      : ? IFS_BOOTSECTOR\r\n");
         IFS_BOOTSECTOR ifs_boot <hidden=true>;
         if (IsValidIfsBootsector(ifs_boot)){
@@ -4460,6 +4510,7 @@ FILE_SYSTEM_TYPE FileSystemRecognizer(FILE_SYSTEM_TYPE allowedTypes, BYTE BytesP
         }
     }
     Printf("FSREC Exit : startPos = %08x, result == %s (%08xh) from allowed == %s\r\n", startPos, ReadFILE_SYSTEM_TYPE(result), result,  ReadFILE_SYSTEM_TYPE(allowedTypes));
+    FSeek(startPos);
     return result;
 }
 
@@ -4681,7 +4732,7 @@ boolean AutoDetectDrive( int SystemID, BYTE BytesPerSectorShift )
     Assert(IsExactlyOneBitSet(detected));
     if (detected & FILE_SYSTEM_TYPE_EXFAT) {
         Printf("ADD()      : adding EXFAT\r\n");
-        EXFAT_DRIVE drive;
+        EXFAT_DRIVE drive(BytesPerSectorShift);
     } else if (detected & FILE_SYSTEM_TYPE_FAT32) {
         Printf("ADD()      : adding FAT32\r\n");
         FAT_DRIVE drive;
@@ -4751,7 +4802,7 @@ if (!detectedBytesPerSectorShift) {
     }
 }
 
-local BYTE bps_shift = 9;
+local BYTE bps_shift <hidden=true> = 9;
 // didn't work with either 512 or 4096 bytes per sector...
 // try MBR...
 if (!detectedBytesPerSectorShift)
@@ -4797,7 +4848,7 @@ if (!detectedBytesPerSectorShift)
             if( !DriveAlreadyExists(FTell()) )
             {
                 PreferredFS[i] = PreferredFileSystemTypeFromPartitionSystemID(SystemID[i]);
-                SystemID_AutoDetectDrive_Result[i] = AutoDetectDrive(SystemID[i]);
+                SystemID_AutoDetectDrive_Result[i] = AutoDetectDrive(SystemID[i], DefaultBytesPerSectorShift);
                 if(!SystemID_AutoDetectDrive_Result[i])
                 {
                     FSeek(tmpPartitionLocation); // AutoDetectDrive() may have position-altering side effect....
