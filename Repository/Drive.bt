@@ -4728,7 +4728,7 @@ boolean AutoDetectDrive2( FILE_SYSTEM_TYPE preferredFilesSystems, BYTE BytesPerS
     FSeek(startPos); // reset after calling FSRec()
     if (preferredFilesSystems != FILE_SYSTEM_TYPE_NONE) {
         // First look for a preferredType of file system
-        detected = FileSystemRecognizer(preferredType, BytesPerSectorShift);
+        detected = FileSystemRecognizer(preferredFilesSystems, BytesPerSectorShift);
         if (detected == FILE_SYSTEM_TYPE_NONE) {
             Printf("ADD2()      : Preferred type not detected, trying other types\r\n");
         }
