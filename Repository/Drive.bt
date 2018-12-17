@@ -1369,16 +1369,15 @@ typedef struct ( QUAD ClusterCount ) {
     local QUAD  CountOfClusters = ClusterCount; // Not dependent on instance data, so OK to optimize
 } EXFAT_EXTENT;
 
-
-// Move the read position to the start of the given cluster
-//void EXFAT_JumpToClusterIndex( DWORD clusterIndex, int DriveNum )
-//{
-//    FSeek( drive[DriveNum].DataAreaFilePos + 
-//        (cluster-2)*drive[DriveNum].ClusterSize );
-//}
-
 // Given a starting cluster index (at current file position), create an array of extents for the file data
-typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
+typedef struct ( int DriveNum, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
+{
+    // using a function removes local variables without having to declare every one as "hidden".
+    local DWORD TotalClusterCount;
+    TotalClusterCount = GenerateChainedExtent( drive[DriveNum].ActiveFat, startingClusterIndex, contiguousClusters);
+} EXFAT_CHAINED_EXTENTS <optimize=false>; // struct jumps around the file, so does not support optimized array
+
+DWORD GenerateChainedExtent(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
 {
     local EXFAT_CLUSTER_INFO currentClusterIndex <hidden=true> = startingClusterIndex;
     local quad start <hidden=true> = FTell();
@@ -1399,7 +1398,7 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         EXFAT_EXTENT extent(contiguousClusters);
         TotalClusterCount = contiguousClusters;
         FSeek(start+4);
-        return;
+        return TotalClusterCount;
     }
 
     while (IsValidClusterIndex(fat_table, currentClusterIndex)) {
@@ -1433,10 +1432,10 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
                 }
                 Printf("%d ... ]]\r\n", extent[q].ClusterIndex);
                 FSeek(start+4);
-                return;
+                return 0; // LOOP ... try to avoid using this chain ...
             }
         }
-        this.TotalClusterCount += 1;
+        TotalClusterCount += 1;
 
         // move file to that cluster index in the FAT...
         FSeek(startof(fat_table.Cluster[currentClusterIndex]));
@@ -1444,12 +1443,13 @@ typedef struct ( EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterI
         currentClusterIndex = fat_table.Cluster[currentClusterIndex];
     }
     // Add one more extent to store the "end of chain" mark... mostly for debugging FAT chain
+    // Give it a different name so can easily loop through all extent[] array entries.
     EXFAT_CLUSTER_INFO end_of_chain;
     // hack to avoid error that ending position was in front of starting position
     // NOTE: THIS STRUCTURE SHOULD BE ABLE TO SPECIFY ATTRIBUTE <size=4>, but blocked by bug (as of v9.0c)
     FSeek(start+4);
-
-} EXFAT_CHAINED_EXTENTS <optimize=false>; // struct jumps around the file, so does not support optimized array
+    return TotalClusterCount;
+} 
 
 
 typedef struct {
@@ -1651,6 +1651,7 @@ void exfat_parse_extents_as_directory(int DriveNumber, const EXFAT_CHAINED_EXTEN
 }
 
 
+
 void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 {
     // for kicks, just parse a whole bunch of entries....
@@ -1708,7 +1709,7 @@ void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters) {
 
     EXFAT_CHAINED_EXTENTS extents(
-        drive[DriveNumber].ActiveFat,
+        DriveNumber,
         startingClusterIndex,
         contiguousClusters
         );
