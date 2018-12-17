@@ -941,6 +941,12 @@ boolean IsValidExfatBootSector                                     (const EXFAT_
 boolean IsValidExfatBootRegion                                     (const EXFAT_BOOT_REGION &boot_region);
 boolean IsValidClusterIndex                                        (const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex);
 
+boolean IsDirectoryEntryUnused   (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x80); }
+boolean IsDirectoryEntryInUse    (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x80); }
+boolean IsDirectoryEntryPrimary  (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x40); }
+boolean IsDirectoryEntrySecondary(const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x40); }
+boolean IsDirectoryEntryCritical (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x20); }
+boolean IsDirectoryEntryBenign   (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x20); }
 
 //================================================================
 // exFAT constants
@@ -1683,14 +1689,146 @@ void exfat_parse_extents_as_file_data(int DriveNumber, const EXFAT_CHAINED_EXTEN
     }
 }
 
+uint16 exfat_parse_directory_entry_set(const quad positions[], uint16 validPositionCount)
+{
+    Assert(validPositionCount >=   1);
+    Assert(validPositionCount <= 256);
+    //
+    // do stuff here to put them together...
+    //
+    // Cases to be handled:
+    //
+    // first item is a secondary entry ==>
+    //    Assert all entries are secondary entries
+    //    `InvalidEntry` for each of those entries
+    //    return
+    //
+    // first item is `not in use` ==>
+    //    Assert only one entry
+    //    `UnusedEntry` for that entry
+    //    return
+    //
+    // Assert first item is a primary entry
+    // Assert all other entries are secondary
+    // Read number of additional entries from first entry
+    // If fewer entries than needed ==>
+    //    `TruncatedEntry` for the set
+    //    return
+    //
+    // Calculate actual checksum
+    // If checksum mismatch ==>
+    //    `ChecksumError` for the set
+    //    return
+    //
+    // Create a set using the number in entry 0
+    //    ??? this is a larger set of code ... break it into function ???
+    // 
+    // If any additional entries ==>
+    //    `InvalidEntry` for each of those entries
+    // 
 
+    /*
+    IsDirectoryEntryInUse    (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x80); }
+    IsDirectoryEntryPrimary  (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x40); }
+    IsDirectoryEntrySecondary(const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x40); }
+    IsDirectoryEntryCritical (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x20); }
+    IsDirectoryEntryBenign   (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x20); }
+    */
 
+}
+
+uint16 exfat_calculate_entry_set_checksum(const quad positions[], uint16 validPositionCount)
+{
+    if (validPositionCount == 0) return;
+    Assert(validPositionCount <= 256);
+
+    local uint16 entriesToValidate = validPositionCount;
+    local uint16 checksum = 0;
+    local uint16 highbit = 0x8000;
+    local uint16 i;
+    local uint16 j;
+    local quad currentPosition = positions[0];
+    // first entry is special, because must exclude the checksum itself
+    for (i = 0; i < 20; i++) {
+        if ((2 == i) || (3 == i)) { continue; }
+        // rotate right + next byte
+        checksum = ((checksum & 1) ? highbit : 0) + ReadByte(currentPosition+i);
+    }
+    // remaining entries process all bytes
+    for (j = 1; j < entriesToValidate; j++) {
+        currentPosition = positions[j];
+        for (i = 0; i < 20; i++) {
+            // rotate right + next byte
+            checksum = ((checksum & 1) ? highbit : 0) + ReadByte(currentPosition+i);
+        }
+    }
+    return checksum;
+}
+
+void exfat_parse_extents(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
+{
+    local DWORD bytesPerCluster = drive[DriveNumber].bytesPerCluster;
+    local DWORD entriesPerCluster = bytesPerCluster/0x20;
+
+    // a Crit Pri may have up to 255 following secondaries
+    // It's a real pain to have every function check offsets
+    // so cache them here, then pass the array and secondary
+    // count to routines that must create structures, calculate
+    // checksums, etc.
+    local quad positions[256];
+
+    local int eod = 0;                   // set to 1 when when hit end-of-directory
+    local int idxExtent = 0;             // which extent is being parsed....
+    local int idxCurrentCluster = 0;     // index of entry in current cluster
+    local int cntEntriesCurrentExtent;   // how many entries in current extent
+    local int validPositionCount = 0;    // how many already have for the set?
+    local quad tmpPos;
+    local EXFAT_DIRENTRY_TYPE tmpEntry;
+
+    // option 1: repeat logic to get next cluster entry many times
+    // option 2: loop through cluster entries, keep state
+    // option 3: loop and split on primary or unused entries,
+    //           but parse in second routine
+    // I'm going with option 3...
+
+    for (idxExtent=0; exists(e.extent[idxExtent]) && !eod; idxExtent++) {
+        // just update index 
+        cntEntriesCurrentExtent = e.extent[i].CountOfClusters * entriesPerCluster;
+        idxCurrentCluster = 0;
+
+        // iterate through all the entries
+        for ( idxCurrentCluster = 0; (!eod) && (idxCurrentCluster < cntEntriesCurrentExtent); idxCurrentCluster++) {
+
+            // get the position and read the entry
+            tmpPos = GetFilePositionForCluster(DriveNumber, e.extent[i].ClusterIndex);
+            tmpEntry = ReadUByte(tmpPos);
+
+            // if the entry is unused or primary, parse what's already in queue
+            // also do this if too many secondary entries...
+            if (IsDirectoryEntryUnused(tmpEntry)  ||
+                IsDirectoryEntryPrimary(tmpEntry) ||
+                validPositionCount == 256
+                ) {
+                exfat_parse_directory_entry_set(positions, validPositionCount);
+                validPositionCount = 0;
+                if (tmpEntry == EXFAT_DIRENTRY_TYPE_END) {
+                    eod = 1;
+                }
+            }
+            positions[validPositionCount] = tmpPos;
+            validPositionCount++;
+        } // end of looping through the current extent
+    } // end of looping through all the extents
+
+    // final parse of the last few entries in the directory
+    exfat_parse_directory_entry_set(positions, validPositionCount);
+    return;
+}
 
 void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 {
     // for kicks, just parse a whole bunch of entries....
-    local int idx = drive[DriveNumber].idx;
-    local DWORD bytesPerCluster = drive[DriveNum].boot_region[idx].Boot.BytesPerCluster;
+    local DWORD bytesPerCluster = drive[DriveNumber].bytesPerCluster;
 
     local int i = 0;
     local int eod = 0;
