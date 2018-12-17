@@ -1402,7 +1402,7 @@ DWORD GenerateChainedExtent(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO start
     }
 
     while (IsValidClusterIndex(fat_table, currentClusterIndex)) {
-        // keep it simple for now... non-contiguous just gets one entry for each one
+        // keep it simple for now... non-contiguous just gets one entry per cluster
         EXFAT_EXTENT extent(1);
         
         // Loop detection -- use tortoise and hare algorithm during the build to detect
@@ -1449,7 +1449,7 @@ DWORD GenerateChainedExtent(EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO start
     // NOTE: THIS STRUCTURE SHOULD BE ABLE TO SPECIFY ATTRIBUTE <size=4>, but blocked by bug (as of v9.0c)
     FSeek(start+4);
     return TotalClusterCount;
-} 
+}
 
 
 typedef struct {
@@ -1644,11 +1644,45 @@ quad GetFilePositionForCluster(int DriveNumber, EXFAT_CLUSTER_INFO clusterIndex)
     result += drive[DriveNumber].bytesPerCluster * (clusterIndex - 2);
     return result;
 }
+typedef struct (DWORD byteCount) {
+    byte Data[byteCount];
+} EXFAT_DATA;
 
 void exfat_parse_extents_as_directory(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 {
     exfat_parse_extents_basic(DriveNumber, e);
 }
+void exfat_parse_extents_as_file_data(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e, UQUAD ValidDataLength)
+{
+    local DWORD bytesPerCluster = drive[DriveNumber].bytesPerCluster;
+    local UQUAD remainingValidBytes = ValidDataLength;
+    local int i = 0;
+    local UQUAD bytesThisExtent;
+
+    // first ValidDataLength bytes will all be added as file data.
+    if (ValidDataLength == 0) { return; }
+    // if there are no clusters, then there is nothing to show....
+    if (e.TotalClusterCount == 0) { return; }
+
+    while (exists(e.extent[i])) {
+        FSeek(GetFilePositionForCluster(DriveNumber, e.extent[i].ClusterIndex));
+        bytesThisExtent = e.extent[i].CountOfClusters * bytesPerCluster;
+        if (remainingValidBytes > bytesThisExtent) {
+            EXFAT_DATA ValidData(bytesThisExtent);
+            remainingValidBytes -= bytesThisExtent;
+        } else if (remainingValidBytes > 0) {
+            EXFAT_DATA ValidData(remainingValidBytes);
+            if (remainingValidBytes < bytesThisExtent) {
+                EXFAT_DATA Allocated(bytesThisExtent - remainingValidBytes);
+            }
+            remainingValidBytes = 0;
+        } else {
+            EXFAT_DATA Allocated(bytesThisExtent);
+        }
+        i++;
+    }
+}
+
 
 
 
@@ -1713,11 +1747,14 @@ typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO 
         startingClusterIndex,
         contiguousClusters
         );
-    
+    exfat_parse_extents_as_file_data(
+        DriveNumber,
+        extents,
+        0x2480
+        );
     exfat_parse_extents_as_directory(DriveNumber, extents);
+
 } EXFAT_DIRECTORY <optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
-
-
 
 typedef struct (BYTE BytesPerSectorShift) {
     local int DriveNum = NumDrives++; // keep track of the index of this drive
