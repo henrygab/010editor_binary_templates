@@ -419,6 +419,21 @@ boolean IsValidGuidString( string guid_string )
     // regex special characters are: ".[]^$()/\*{}?+|"
     return RegExMatch(guid_string, "^\{\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\}$");
 }
+boolean IsGuidNonZero( const GUID &g )
+{
+    return
+        (0 != g.Part1   ) ||
+        (0 != g.Part2   ) ||
+        (0 != g.Part3   ) ||
+        (0 != g.Part4[0]) ||
+        (0 != g.Part4[1]) ||
+        (0 != g.Part5[0]) ||
+        (0 != g.Part5[1]) ||
+        (0 != g.Part5[2]) ||
+        (0 != g.Part5[3]) ||
+        (0 != g.Part5[4]) ||
+        (0 != g.Part5[5]) ;
+}
 
 // Partition Entry
 typedef struct
@@ -614,7 +629,14 @@ typedef struct (int size)
     if( size > 128 ) {
         UBYTE   Unused[ size - 128 ] <format=hex>;
     }
-} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY>; // OK to optimize.  But specifying size will fail if adding a parameter to this struct.  Sigh.
+} EFI_PARTITION_ENTRY <read=ReadEFI_PARTITION_ENTRY, optimize=false>;
+// BUGBUG -- multiple parser issues as of v9.0.1:
+// EFI_PARTITION_ENTRY should be OK to optimize, even though parameterized,
+// because the existence and offsets of fields depends ONLY on parameter,
+// not instance data.  The parser is not currently smart enough to know this?
+// However, the compiler throws a warning that it's unsafe.
+// EFI_PARTITION_ENTRY should also be OK to specify <size=size>.
+// However, this fails due to a parser bug, where it "forgets" the parameter.
 
 // Show EFI partition name and EFI type beside the entry
 wstring ReadEFI_PARTITION_ENTRY( EFI_PARTITION_ENTRY &entry )
@@ -1257,6 +1279,21 @@ typedef struct {
     UBYTE  Reserved[4];
 } EXFAT_OEM_FLASH_PARAMETER;
 
+boolean IsGuidExfatOemFlashParameter( const GUID& g ) {
+    return
+        (0x467E0C0A == g.Part1   ) &&
+        (    0x9933 == g.Part2   ) &&
+        (    0x2140 == g.Part3   ) &&
+        (      0x90 == g.Part4[0]) &&
+        (      0xC8 == g.Part4[1]) &&
+        (      0xFA == g.Part5[0]) &&
+        (      0x6D == g.Part5[1]) &&
+        (      0x38 == g.Part5[2]) &&
+        (      0x9C == g.Part5[3]) &&
+        (      0x4B == g.Part5[4]) &&
+        (      0xA2 == g.Part5[5]) ;
+}
+
 typedef struct (BYTE BytesPerSectorShift) {
     // regardless of the BytesPerSectorShift, only ten (10) OEM_PARAMETER_TEMPLATE are stored...
     local int i <hidden=true>;
@@ -1539,8 +1576,6 @@ typedef struct {
     UBYTE   Reserved2[8];           // 24..31
 } EXFAT_DIRENTRY_FILE;
 
-// TODO: EXFAT_DIRENTRY_FILE_STREAM
-//    == EXFAT_DIRENTRY_TYPE_FILE_STREAM (0xA0)
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_FILE_STREAM (0xA0)
     FSkip(-1);
@@ -1579,7 +1614,6 @@ typedef struct {
     wchar_t NameCharacters[15];
 } EXFAT_DIRENTRY_FILE_NAME;
 
-// TODO: EXFAT_DIRENTRY_VOLUME_GUID
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_GUID (0xC0)
     FSkip(-1);
@@ -1611,16 +1645,18 @@ quad GetFilePositionForCluster(int DriveNumber, EXFAT_CLUSTER_INFO clusterIndex)
     return result;
 }
 
-typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters) {
-    local int DriveNum = DriveNumber;
-    local DWORD bytesPerCluster = drive. boot_region[idx].Boot.BytesPerCluster;
-    EXFAT_CHAINED_EXTENTS extents(
-        fat_table,
-        startingClusterIndex,
-        contiguousClusters
-        );
-    
+void exfat_parse_extents_as_directory(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
+{
+    exfat_parse_extents_basic(DriveNumber, e);
+}
+
+
+void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
+{
     // for kicks, just parse a whole bunch of entries....
+    local int idx = drive[DriveNumber].idx;
+    local DWORD bytesPerCluster = drive[DriveNum].boot_region[idx].Boot.BytesPerCluster;
+
     local int i = 0;
     local int eod = 0;
 
@@ -1630,10 +1666,10 @@ typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO 
     local quad currentEntryStart;
     local ubyte currentEntryType;
 
-    while ( exists(extents.extent[i]) && !eod ) {
+    while ( exists(e.extent[i]) && !eod ) {
         // initialize to start of cluster location
-        clusterStart = GetFilePositionForCluster(DriveNumber, extents.extent[i].ClusterIndex);
-        entriesThisExtent = extents.extent[i].CountOfClusters * (bytesPerCluster / 0x20);
+        clusterStart = GetFilePositionForCluster(DriveNumber, e.extent[i].ClusterIndex);
+        entriesThisExtent = e.extent[i].CountOfClusters * (bytesPerCluster / 0x20);
         FSeek(clusterStart);
 
         for (k = 0; k < entriesThisExtent && !eod; k++) {
@@ -1667,9 +1703,17 @@ typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO 
         }
         i++;
     }
+}
+
+typedef struct (int DriveNumber, EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters) {
+
+    EXFAT_CHAINED_EXTENTS extents(
+        drive[DriveNumber].ActiveFat,
+        startingClusterIndex,
+        contiguousClusters
+        );
     
-
-
+    exfat_parse_extents_as_directory(DriveNumber, extents);
 } EXFAT_DIRECTORY <optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
 
@@ -1738,7 +1782,6 @@ typedef struct (BYTE BytesPerSectorShift) {
     
     EXFAT_DIRECTORY root(
         DriveNum,
-    //EXFAT_CHAINED_EXTENTS root_extent(
         ActiveFat,
         boot_region[idx].Boot.RootClusterIndex,
         0 // requires use of FAT Chain
@@ -1785,8 +1828,6 @@ typedef struct (BYTE BytesPerSectorShift) {
 ///////////////////////////////////////////////////////////////////////////////
 
 } EXFAT_DRIVE <open=true, optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
-
-
 
 
 
