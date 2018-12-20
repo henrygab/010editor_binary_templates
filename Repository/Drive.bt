@@ -1837,9 +1837,31 @@ typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 seco
     // TODO: Add File Data
 
 
-} EXFAT_DIRENTRY_SET <optimize=false>; 
+} EXFAT_DIRENTRY_SET <optimize=false, read=ReadEXFAT_DIRENTRY_SET>; 
 
-
+wstring ReadEXFAT_DIRENTRY_SET( const EXFAT_DIRENTRY_SET &e )
+{
+    wstring result;
+    if (exists(e.BitmapEntry[0])) {
+        result = "** AllocationBitmap **";
+    } else if (exists(e.UpcaseTableEntry[0])) {
+        result = "** UpcaseTable **";
+    } else if (exists(e.VolumeLabelEntry[0])) {
+        WStrncpy(result, e.VolumeLabelEntry[0].Label, 11);
+        result = "** Label: " + result + " **";
+    } else if (exists(e.PaddingEntry[0])) {
+        result = "** exfat padding **";
+    } else if (exists(e.VolumeGuidEntry[0])) {
+        result = ReadGUID(e.VolumeGuidEntry.VolumeGuid);
+    } else if (exists(e.GenericEntry[0].Typecode)) {
+        SPrintf(result, "** unrecognized - %s **", ReadEXFAT_DIRENTRY_TYPE(e.GenericEntry[0].EntryType));
+    } else if (exists(e.FileEntry[0])) {
+        result = e.Filename;
+    } else {
+        result = "** no information available **";
+    }
+    return result;
+}
 
 void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositionCount)
 {
@@ -1868,6 +1890,14 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
         types[i] = ReadUByte(positions[i]);
         Printf("    direntry at %08xh, type == %02x (%s)\r\n", positions[i], types[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
     }
+
+    if (types[0] == EXFAT_DIRENTRY_TYPE_END) {
+        Assert(validPositionCount == 1);
+        EXFAT_DIRENTRY_GENERIC EndOfDirectory;
+        Printf("    End of directory marker reached\r\n");
+        return;
+    }
+        
 
     // If "unused" entry, add it by itself
     if (IsDirectoryEntryUnused(types[0])) {
