@@ -937,7 +937,7 @@ string  ReadEXFAT_CLUSTER_INFO                 (const EXFAT_CLUSTER_INFO &info  
 string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
 string  ReadEXFAT_BOOT_CHECKSUM_SECTOR         (const EXFAT_BOOT_CHECKSUM_SECTOR &sector );
 string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_region     );
-string  ReadEXFAT_DIRENTRY_TYPE                (const EXFAT_DIRENTRY_TYPE &type          );
+string  ReadEXFAT_DIRENTRY_TYPE                (const EXFAT_DIRENTRY_TYPE type          );
 
 
 DWORD   GenerateChainedExtent                                      (const EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters );
@@ -948,12 +948,12 @@ boolean IsValidExfatBootSector                                     (const EXFAT_
 boolean IsValidExfatBootRegion                                     (const EXFAT_BOOT_REGION &boot_region);
 boolean IsValidClusterIndex                                        (const EXFAT_FAT_TABLE &fat_table, const EXFAT_CLUSTER_INFO clusterIndex);
 
-boolean IsDirectoryEntryUnused   (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x80); }
-boolean IsDirectoryEntryInUse    (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x80); }
-boolean IsDirectoryEntryPrimary  (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x40); }
-boolean IsDirectoryEntrySecondary(const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x40); }
-boolean IsDirectoryEntryCritical (const EXFAT_DIRENTRY_TYPE &e) { return 0 == (e & 0x20); }
-boolean IsDirectoryEntryBenign   (const EXFAT_DIRENTRY_TYPE &e) { return 0 != (e & 0x20); }
+boolean IsDirectoryEntryUnused   (const EXFAT_DIRENTRY_TYPE e) { return 0 == (e & 0x80); }
+boolean IsDirectoryEntryInUse    (const EXFAT_DIRENTRY_TYPE e) { return 0 != (e & 0x80); }
+boolean IsDirectoryEntryPrimary  (const EXFAT_DIRENTRY_TYPE e) { return 0 == (e & 0x40); }
+boolean IsDirectoryEntrySecondary(const EXFAT_DIRENTRY_TYPE e) { return 0 != (e & 0x40); }
+boolean IsDirectoryEntryCritical (const EXFAT_DIRENTRY_TYPE e) { return 0 == (e & 0x20); }
+boolean IsDirectoryEntryBenign   (const EXFAT_DIRENTRY_TYPE e) { return 0 != (e & 0x20); }
 
 //================================================================
 // exFAT constants
@@ -1036,7 +1036,7 @@ string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
     }
     return result;
 }
-string ReadEXFAT_DIRENTRY_TYPE(const EXFAT_DIRENTRY_TYPE& type) {
+string ReadEXFAT_DIRENTRY_TYPE(const EXFAT_DIRENTRY_TYPE type) {
     if (type == EXFAT_DIRENTRY_TYPE_END) {
         return "End-of-dir (00h)";
     } else if (type == EXFAT_DIRENTRY_TYPE_INVALID) {
@@ -1705,8 +1705,8 @@ typedef struct (DWORD byteCount) {
 
 void exfat_parse_extents_as_directory(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 {
-    //exfat_parse_extents(DriveNumber, e);
-    exfat_parse_extents_basic(DriveNumber, e);
+    exfat_parse_extents(DriveNumber, e);
+    //exfat_parse_extents_basic(DriveNumber, e);
 }
 void exfat_parse_extents_as_file_data(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e, UQUAD ValidDataLength)
 {
@@ -1740,28 +1740,28 @@ void exfat_parse_extents_as_file_data(int DriveNumber, const EXFAT_CHAINED_EXTEN
 }
 void   exfat_add_invalid_directory_entry(const quad position)
 {
-    EXFAT_DIRENTRY_TYPE type = ReadUByte(position);
+    local EXFAT_DIRENTRY_TYPE type = ReadUByte(position);
     FSeek(position);
     if (IsDirectoryEntryPrimary(type)) {
-        if (types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) {
+        if (type == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) {
             EXFAT_DIRENTRY_ALLOCATION_BITMAP  InvalidEntry;
-        } else if (types[0] == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE) {
             EXFAT_DIRENTRY_UPCASE_TABLE       InvalidEntry;
-        } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
             EXFAT_DIRENTRY_VOLUME_LABEL       InvalidEntry;
-        } else if (types[0] == EXFAT_DIRENTRY_TYPE_FILE) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_FILE) {
             EXFAT_DIRENTRY_FILE               InvalidEntry;
-        } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
             EXFAT_DIRENTRY_VOLUME_GUID        InvalidEntry;
-        } else if (types[0] == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
             EXFAT_DIRENTRY_TEXFAT_PADDING     InvalidEntry;
         } else {
             EXFAT_DIRENTRY_GENERIC_PRIMARY    InvalidEntry;
         }
     } else {
-        if (types[i] == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
+        if (type == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
             EXFAT_DIRENTRY_FILE_STREAM       InvalidEntry;
-        } else if (types[i] == EXFAT_DIRENTRY_TYPE_FILE_NAME) {
+        } else if (type == EXFAT_DIRENTRY_TYPE_FILE_NAME) {
             EXFAT_DIRENTRY_FILE_NAME         InvalidEntry;
         } else {
             EXFAT_DIRENTRY_GENERIC_SECONDARY InvalidEntry;
@@ -1778,31 +1778,31 @@ typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 seco
     Printf("Creating EXFAT_DIRENTRY_SET with %d secondary entries\r\n", secondaryEntryCount);
     if (types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) {
         // redefines SecondaryEntriesCount, checksum DNE
-        Assert(validPositionsCount == 1);
-        EXFAT_DIRENTRY_ALLOCATION_BITMAP Primary;
+        Assert(secondaryEntryCount == 0);
+        EXFAT_DIRENTRY_ALLOCATION_BITMAP BitmapEntry;
         // TODO: Add chained extents
         // TODO: Add File Data for allocation bitmap
         return;
     } else if (types[0] == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE) {
-        Assert(validPositionsCount == 1);
-        EXFAT_DIRENTRY_UPCASE_TABLE Primary;
+        Assert(secondaryEntryCount == 0);
+        EXFAT_DIRENTRY_UPCASE_TABLE UpcaseTableEntry;
         // TODO: Add chained extents
         // TODO: Add File Data for upcase table
         return;
     } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
-        Assert(validPositionsCount == 1);
-        EXFAT_DIRENTRY_VOLUME_LABEL Primary;
+        Assert(secondaryEntryCount == 0);
+        EXFAT_DIRENTRY_VOLUME_LABEL VolumeLabelEntry;
         return;
     } else if (types[0] == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
-        Assert(validPositionsCount == 1);
-        EXFAT_DIRENTRY_GENERIC_PRIMARY Primary;
+        Assert(secondaryEntryCount == 0);
+        EXFAT_DIRENTRY_GENERIC_PRIMARY PaddingEntry;
         return;
     } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
-        Assert(validPositionsCount == 1);
-        EXFAT_DIRENTRY_VOLUME_GUID Primary;
+        Assert(secondaryEntryCount == 0);
+        EXFAT_DIRENTRY_VOLUME_GUID VolumeGuidEntry;
         return;
     } else if (types[0] != EXFAT_DIRENTRY_TYPE_FILE) {
-        EXFAT_DIRENTRY_GENERIC_PRIMARY Primary;
+        EXFAT_DIRENTRY_GENERIC_PRIMARY GenericEntry;
         // TODO: Add chained extents
         // TODO: Add File Data if primary lists data
         return;
@@ -1811,7 +1811,7 @@ typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 seco
     // else it's a _FILE primary entry
     local wstring Filename;
 
-    EXFAT_DIRENTRY_FILE Primary;
+    EXFAT_DIRENTRY_FILE FileEntry;
     for (i = 1; i < secondaryEntryCount+1; i++) {
         if (types[i] == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
             EXFAT_DIRENTRY_FILE_STREAM StreamEntry; // should be only one...
@@ -1825,12 +1825,11 @@ typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 seco
     Assert(exists(StreamEntry[0]));
 
     // Now parse the name of the file...
-    i = 0;
     Filename = "";
-    while ((WStrLen(Filename) < StreamEntry[0].NameCharCount) && exists(NameEntry[i])) {
+    for (i = 0; exists(NameEntry[i]); i++) {
         Filename += NameEntry[i].NameCharacters;
     }
-    if (WStrLen(Filename) > StreamEntry[0].NameCharCount) {
+    if (WStrlen(Filename) > StreamEntry[0].NameCharCount) {
         Filename = WSubStr(Filename, StreamEntry[0].NameCharCount);
     }
 
@@ -1853,6 +1852,8 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
     // positions == array of file positions, one per directory entry, potentially across clusters
     // validPositionCount == number of directory entries that can be parsed
     //
+    Printf("Parsing potential directory entry set (%d entries)\r\n", validPositionCount);
+
     Assert(validPositionCount >=   1);
     Assert(validPositionCount <= 256);
 
@@ -1863,17 +1864,16 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
     local uint16 calculatedChecksum;
     local uint16 actualChecksum;
 
-    Printf("Parsing potential directory entry set (%d entries)\r\n", validPositionCount);
     for (i = 0; i < validPositionCount; i++) {
         types[i] = ReadUByte(positions[i]);
-        Printf("    direntry at %08xh, type == %s\r\n", positions[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
+        Printf("    direntry at %08xh, type == %02x (%s)\r\n", positions[i], types[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
     }
 
     // If "unused" entry, add it by itself
-    if (IsDirectoryEntryUnusued(types[0])) {
+    if (IsDirectoryEntryUnused(types[0])) {
         Assert(validPositionCount == 1);
         EXFAT_DIRENTRY_GENERIC UnusedEntry;
-        Printf("    Unused entry added\r\n");
+        Printf("    Unused entry added for type %02x (%s)\r\n",  types[0], ReadEXFAT_DIRENTRY_TYPE(types[0]));
         return;
     }
 
@@ -1932,13 +1932,9 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
         } else if (
             // FILE requires 0/1 STREAM followed by 1+ FILE_NAME
             (types[0] == EXFAT_DIRENTRY_TYPE_FILE)
-            && ( 
-                (  (types[1] == EXFAT_DIRENTRY_TYPE_STREAM)
-                && (types[2] != EXFAT_DIRENTRY_TYPE_FILE_NAME)
+            && (   (types[1] != EXFAT_DIRENTRY_TYPE_FILE_STREAM)
+                || (types[2] != EXFAT_DIRENTRY_TYPE_FILE_NAME)
                 )
-                ||
-                (types[1] != EXFAT_DIRENTRY_TYPE_FILE_NAME)
-               )
             ) {
             for (i = 0; i < validPositionCount; i++) {
                 exfat_add_invalid_directory_entry(positions[i]);
@@ -2022,22 +2018,23 @@ void exfat_parse_extents(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 
     for (idxExtent=0; exists(e.extent[idxExtent]) && !eod; idxExtent++) {
         // just update index 
-        cntEntriesCurrentExtent = e.extent[i].CountOfClusters * entriesPerCluster;
+        cntEntriesCurrentExtent = e.extent[idxExtent].CountOfClusters * entriesPerCluster;
         idxCurrentCluster = 0;
+        tmpPos = GetFilePositionForCluster(DriveNumber, e.extent[idxExtent].ClusterIndex);
 
         // iterate through all the entries
         for ( idxCurrentCluster = 0; (!eod) && (idxCurrentCluster < cntEntriesCurrentExtent); idxCurrentCluster++) {
 
-            // get the position and read the entry
-            tmpPos = GetFilePositionForCluster(DriveNumber, e.extent[i].ClusterIndex);
+            // read the entry
             tmpEntry = ReadUByte(tmpPos);
 
             // if the entry is unused or primary, parse what's already in queue
             // also do this if too many secondary entries...
-            if (IsDirectoryEntryUnused(tmpEntry)  ||
-                IsDirectoryEntryPrimary(tmpEntry) ||
-                validPositionCount == 256
-                ) {
+            if (validPositionCount > 0 &&
+                (IsDirectoryEntryUnused(tmpEntry)  ||
+                 IsDirectoryEntryPrimary(tmpEntry) ||
+                 validPositionCount == 256
+                )) {
                 exfat_parse_directory_entry_set(positions, validPositionCount);
                 validPositionCount = 0;
                 if (tmpEntry == EXFAT_DIRENTRY_TYPE_END) {
@@ -2045,6 +2042,7 @@ void exfat_parse_extents(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
                 }
             }
             positions[validPositionCount] = tmpPos;
+            tmpPos += 32;
             validPositionCount++;
         } // end of looping through the current extent
     } // end of looping through all the extents
