@@ -875,7 +875,7 @@ struct EXFAT_DIRENTRY_FILE;               // CritPri
 struct EXFAT_DIRENTRY_FILE_STREAM;        // CritSec
 struct EXFAT_DIRENTRY_FILE_NAME;          // CritSec
 struct EXFAT_DIRENTRY_VOLUME_GUID;        // BenignPri
-struct EXFAT_DIRENTRY_TEXFAT_PADDING      // BenignPri
+struct EXFAT_DIRENTRY_TEXFAT_PADDING;     // BenignPri
 
 
 // A directory entry set is a collection of directory entries.
@@ -940,7 +940,7 @@ string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_re
 string  ReadEXFAT_DIRENTRY_TYPE                (const EXFAT_DIRENTRY_TYPE &type          );
 
 
-DWORD   GenerateChainedExtent                                      (const EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
+DWORD   GenerateChainedExtent                                      (const EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters );
 DWORD   CalculateExpectedExfatBootRegionChecksumUsingStartPosition (quad start, BYTE BytesPerSectorShift);
 DWORD   CalculateExpectedExfatBootRegionChecksum                   (const EXFAT_BOOT_REGION &boot_region);
 boolean IsValidExfatBootExtendedSector                             (const EXFAT_BOOT_EXTENDED_SECTOR &s);
@@ -1705,6 +1705,7 @@ typedef struct (DWORD byteCount) {
 
 void exfat_parse_extents_as_directory(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
 {
+    //exfat_parse_extents(DriveNumber, e);
     exfat_parse_extents_basic(DriveNumber, e);
 }
 void exfat_parse_extents_as_file_data(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e, UQUAD ValidDataLength)
@@ -1771,7 +1772,7 @@ void   exfat_add_invalid_directory_entry(const quad position)
 
 
 // REQUIRES: first entry is primary, all remaining entries are secondary
-struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 secondaryEntryCount)
+typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 secondaryEntryCount)
 {
     local int i <hidden=true>;
     Printf("Creating EXFAT_DIRENTRY_SET with %d secondary entries\r\n", secondaryEntryCount);
@@ -1858,9 +1859,9 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
     // first, read the type for each entry to be parsed...
     local EXFAT_DIRENTRY_TYPE types[validPositionCount];
     local int i;
-    local UInt16 requiredSecondaryEntries;
-    local UInt16 calculatedChecksum;
-    local UInt16 actualChecksum;
+    local uint16 requiredSecondaryEntries;
+    local uint16 calculatedChecksum;
+    local uint16 actualChecksum;
 
     Printf("Parsing potential directory entry set (%d entries)\r\n", validPositionCount);
     for (i = 0; i < validPositionCount; i++) {
@@ -1927,6 +1928,7 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
                 requiredSecondaryEntries,
                 validPositionCount-1
                 );
+            return;
         } else if (
             // FILE requires 0/1 STREAM followed by 1+ FILE_NAME
             (types[0] == EXFAT_DIRENTRY_TYPE_FILE)
@@ -1938,14 +1940,13 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
                 (types[1] != EXFAT_DIRENTRY_TYPE_FILE_NAME)
                )
             ) {
-                for (i = 0; i < validPositionCount; i++) {
-                    exfat_add_invalid_directory_entry(positions[i]);
-                }
-                Printf(
-                    "    Invalid entries due to FILE not followed by needed STREAM? and FILE_NAME+ entries\r\n",
-                    );
-                return;
+            for (i = 0; i < validPositionCount; i++) {
+                exfat_add_invalid_directory_entry(positions[i]);
             }
+            Printf(
+                "    Invalid entries due to FILE not followed by needed STREAM? and FILE_NAME+ entries\r\n"
+                );
+            return;
         } else {
             FSeek(positions[0]);
             EXFAT_DIRENTRY_SET Entry(positions, types, requiredSecondaryEntries);
