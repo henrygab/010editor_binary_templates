@@ -1,13 +1,3 @@
-// TODO:
-// [ ] Mandatory parameters for ALL Drives:
-//          local FILE_SYSTEM_TYPE FsType;  // to indicate the file system type of that drive
-//          local BYTE DriveBytesPerSectorShift; // to indicate sector size ... presumed 512 if does not exist
-// [ ] Add hacks to prevent accidental optimized-array instantiations...
-// [ ] For a given section:
-// [ ] Forward-define all structures, with inline documentation on use.
-// [ ] Move all enums to top of file
-//
-
 //------------------------------------------------
 //--- 010 Editor v7.0 Binary Template
 //
@@ -43,6 +33,14 @@
 //  properly handle the Fixup values and if the Fixup
 //  value hits critical information the template may stop.
 //------------------------------------------------
+
+// TODO:
+// [ ] Mandatory parameters for ALL Drives:
+//          local FILE_SYSTEM_TYPE FsType;  // to indicate the file system type of that drive
+//          local BYTE DriveBytesPerSectorShift; // to indicate sector size ... presumed 512 if does not exist
+// [ ] Add hacks to prevent accidental optimized-array instantiations...
+//
+
 LittleEndian();
 
 
@@ -58,51 +56,6 @@ local const boolean IFS_VARIABLE_LENGTH_STRUCTURE    <hidden=true> = false;
 
 
 local int NumDrives = 0;
-
-// A small aside on the design decision for supporting 4k sector sizes...
-//
-// Most image files correspond to 512 byte logical sectors,
-//     even when media is physically 4k.
-// Still less common (but increasing frequency) are 4k-native drives,
-//     where both the logical **_and_** physical sector size are 4k.
-// Each file that runs this template gets a clean state.
-// A single logical sector size is used for any single image file.
-//
-// One potential design for the AutoDetectDrive() function might
-//     default to 512 bytes per sector, and to save the detected
-//     sector size when a drive is successfully created.
-// This design would work, until a 1k/2k/4k sector image file had a
-//     false positive detection at 512 bytes per sector.  Then, no
-//     later partitions would be detected, because the 512 would be
-//     locked in (due to being detected).
-//
-// Another potential design for the AutoDetectDrive() function might
-//     simply try to create drives for the media using 512 byte
-//     sectors, and then try again using 4k sectors, even if some
-//     drives were detected at 512.
-// This design should work, although it might be somewhat slower
-//     as it would be essentially doubling the work.
-//
-// Another potential design might perform multiple passes...
-//     A first, lightweight pass would simply attempt to detect
-//     partitions and file system signatures on the media for each
-//     potential sector size.  A second pass would choose the "most likely"
-//     sector size for the image.
-// This design could work, although the strength of likelihood
-//     might be hard to equate across file systems.  For example,
-//     IFS has only a few bytes that can be validated, while exFAT
-//     has a full sector filled with a repeated checksum over 10+
-//     other nearby sectors.
-// 
-// Practically speaking, it may be sufficient to just presume the
-//     sector size is 512, and then try 4k if no drives are found.
-//     If an edge case is found where this fails, the user should
-//     temporarily modify the default sector size variable below
-//     to meet their needs (e.g., set to 4096 / 12 for 4kn image).
-//
-// This last option is the design currently being implemented.
-// 
-
 local const BYTE  SupportedBytesPerSectorShift[2] <hidden=true> = { 9, 12 };
 
 boolean IsExactlyOneBitSet( UQUAD value ) {  return 0 == (value & (value-1)); }
@@ -372,7 +325,7 @@ typedef struct {
     UBYTE Part4[2];
     UBYTE Part5[6];
     if (was_big_endian) { BigEndian(); }
-} GUID <read=ReadGUID, write=WriteGUID, format=hex>; // TODO - Determine if this is safe to optimize
+} GUID <read=ReadGUID, write=WriteGUID, format=hex>;
 
 string ReadGUID( GUID &g )
 {
@@ -393,14 +346,10 @@ int WriteGUID( GUID &g, string s )
     local int read_arguments <hidden=true>;
     local int result <hidden=true>;
 
-    // TODO -- What happens if the GUID is partially written, and failure is returned?
-    //         Does 010Editor restore the old value automatically, or is it required
-    //         that each WriteX() function have zero side effects on failure?
-    // BUGBUG -- May partially update parameter &g when returning failure....
     was_big_endian = IsBigEndian();
     LittleEndian();
     result = -1; // per docs, return 0 on success, -1 on failure
-    if (IsValidGuidString(s)) {  // this *SHOULD* prevent any partially-written results...
+    if (IsValidGuidString(s)) {  // prevent partially-written results
         // copy from ReadGUID() function
         read_arguments = SScanf( s, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
             g.Part1, g.Part2, g.Part3, g.Part4[0], g.Part4[1],
@@ -1004,8 +953,7 @@ string ReadEXFAT_OEM_PARAMETER_TEMPLATE(const EXFAT_OEM_PARAMETER_TEMPLATE &p) {
     return ReadGUID(p.ParameterGuid);
 }
 string ReadEXFAT_BOOT_CHECKSUM_SECTOR( const EXFAT_BOOT_CHECKSUM_SECTOR &sector ) {
-    if (!sector.InternallyValid) { return "Invalid"; }
-    string s = SPrintf(s, "Valid (%08Xh)", sector.Checksum[0]);
+    string s = SPrintf(s, "First Checksum (%08Xh)", sector.Checksum[0]);
     return s;
 }
 string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
@@ -1422,7 +1370,19 @@ typedef struct (quad CountOfDataClusters)
 typedef struct ( QUAD ClusterCount ) {
     EXFAT_CLUSTER_INFO ClusterIndex;
     local QUAD  CountOfClusters = ClusterCount; // Not dependent on instance data, so OK to optimize
-} EXFAT_EXTENT;
+} EXFAT_EXTENT <optimize=false, read=ReadEXFAT_EXTENT>;
+
+string ReadEXFAT_EXTENT(const EXFAT_EXTENT& e)
+{
+    local string result;
+    if (e.CountOfClusters == 1) {
+        SPrintf(result, "%d", e.ClusterIndex);
+    } else {
+        SPrintf(result, "%d (%d clusters)", e.ClusterIndex, e.CountOfClusters);
+    }
+    return result;
+}
+
 
 // Given a starting cluster index (at current file position), create an array of extents for the file data
 typedef struct ( int DriveNum, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
@@ -1430,7 +1390,19 @@ typedef struct ( int DriveNum, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD con
     // using a function removes local variables without having to declare every one as "hidden".
     local DWORD TotalClusterCount;
     TotalClusterCount = GenerateChainedExtent( drive[DriveNum].ActiveFat, startingClusterIndex, contiguousClusters);
-} EXFAT_CHAINED_EXTENTS <optimize=false>; // struct jumps around the file, so does not support optimized array
+} EXFAT_CHAINED_EXTENTS <optimize=false, read=ReadEXFAT_CHAINED_EXTENTS>; // struct jumps around the file, so does not support optimized array
+
+string ReadEXFAT_CHAINED_EXTENTS(const EXFAT_CHAINED_EXTENTS &e)
+{
+    local string result;
+    local int i;
+    for (i = 0; exists(e.extent[i]); i++) {
+        result += ReadEXFAT_EXTENT(e.extent[i]);
+        result += "->";
+    }
+    result += "eoc";
+    return result;
+}
 
 DWORD GenerateChainedExtent(const EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters )
 {
@@ -1518,7 +1490,11 @@ typedef struct {
     UBYTE CustomDefined[19] <format=hex>;
     DWORD FirstClusterIndex <format=decimal>;
     UQUAD DataLength <format=hex>;
-} EXFAT_DIRENTRY_GENERIC <size=32>;
+} EXFAT_DIRENTRY_GENERIC <size=32, read=ReadEXFAT_DIRENTRY_GENERIC>;
+wstring ReadEXFAT_DIRENTRY_GENERIC( const EXFAT_DIRENTRY_GENERIC &e )
+{
+    return ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
@@ -1536,7 +1512,11 @@ typedef struct {
     UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_GENERIC_PRIMARY <size=32>;
+} EXFAT_DIRENTRY_GENERIC_PRIMARY <size=32, read=ReadEXFAT_DIRENTRY_GENERIC_PRIMARY>;
+wstring ReadEXFAT_DIRENTRY_GENERIC_PRIMARY( const EXFAT_DIRENTRY_GENERIC_PRIMARY &e )
+{
+    return ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
@@ -1553,7 +1533,11 @@ typedef struct {
     UBYTE  CustomDefined[18];       // 2..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_GENERIC_SECONDARY <size=32>;
+} EXFAT_DIRENTRY_GENERIC_SECONDARY <size=32, read=ReadEXFAT_DIRENTRY_GENERIC_SECONDARY>;
+wstring ReadEXFAT_DIRENTRY_GENERIC_SECONDARY( const EXFAT_DIRENTRY_GENERIC_SECONDARY &e )
+{
+    return ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP (0x81)
@@ -1568,7 +1552,11 @@ typedef struct {
     UBYTE  Reserved[18];            // 2..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_ALLOCATION_BITMAP <size=32>;
+} EXFAT_DIRENTRY_ALLOCATION_BITMAP <size=32, read=ReadEXFAT_DIRENTRY_ALLOCATION_BITMAP>;
+wstring ReadEXFAT_DIRENTRY_ALLOCATION_BITMAP( const EXFAT_DIRENTRY_ALLOCATION_BITMAP &e )
+{
+    return ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE (0x82)
@@ -1583,7 +1571,11 @@ typedef struct {
     UBYTE  __[12];                  //  8..19
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_UPCASE_TABLE <size=32>;
+} EXFAT_DIRENTRY_UPCASE_TABLE <size=32, read=ReadEXFAT_DIRENTRY_UPCASE_TABLE>;
+wstring ReadEXFAT_DIRENTRY_UPCASE_TABLE( const EXFAT_DIRENTRY_UPCASE_TABLE &e )
+{
+    return ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL (0x83)
@@ -1596,7 +1588,17 @@ typedef struct {
     UBYTE    CharacterCount;        // 1
     wchar_t  Label[11];             // 2..23
     UBYTE    Reserved[8];           // 24..31 -- normally DataLength
-} EXFAT_DIRENTRY_VOLUME_LABEL <size=32>;
+} EXFAT_DIRENTRY_VOLUME_LABEL <size=32, read=ReadEXFAT_DIRENTRY_VOLUME_LABEL>;
+wstring ReadEXFAT_DIRENTRY_VOLUME_LABEL( const EXFAT_DIRENTRY_VOLUME_LABEL &e )
+{
+    local wstring result;
+    if (e.EntryType == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
+        WStrncpy(result, e.Label, 11);
+    } else {
+        result = ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+    }
+    return result;
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_FILE (0x85)
@@ -1629,7 +1631,22 @@ typedef struct {
     UBYTE   Accessed10msIncrement;  // 22 -- BUGBUG -- Is this right?
     UBYTE   _;                      // 23
     UBYTE   Reserved2[8];           // 24..31
-} EXFAT_DIRENTRY_FILE <size=32>;
+} EXFAT_DIRENTRY_FILE <size=32, read=ReadEXFAT_DIRENTRY_FILE>;
+wstring ReadEXFAT_DIRENTRY_FILE( const EXFAT_DIRENTRY_FILE &e )
+{
+    local string result;
+    // cmd.exe shows as "A  SHR"
+    if (e.EntryType == EXFAT_DIRENTRY_TYPE_FILE) {
+        result += e.Attributes.Directory ? "D" : ".";
+        result += e.Attributes.Archive   ? "A" : ".";
+        result += e.Attributes.System    ? "S" : ".";
+        result += e.Attributes.Hidden    ? "H" : ".";
+        result += e.Attributes.ReadOnly  ? "R" : ".";
+    } else {
+        result = ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+    }
+    return result;
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_FILE_STREAM (0xA0)
@@ -1652,8 +1669,18 @@ typedef struct {
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
 
-} EXFAT_DIRENTRY_FILE_STREAM <size=32>;
-
+} EXFAT_DIRENTRY_FILE_STREAM <size=32, read=ReadEXFAT_DIRENTRY_FILE_STREAM>;
+wstring ReadEXFAT_DIRENTRY_FILE_STREAM( const EXFAT_DIRENTRY_FILE_STREAM &e )
+{
+    local string result;
+    if (e.EntryType == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
+        result += e.AllocationPossible ? "" : "(no data)";
+        result += e.NoFatChain ? "" : "(contig)";
+    } else {
+        result = ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+    }
+    return result;
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_FILE_NAME (0xA1)
@@ -1667,7 +1694,17 @@ typedef struct {
     UBYTE NoFatChain          : 1;
 
     wchar_t NameCharacters[15];
-} EXFAT_DIRENTRY_FILE_NAME <size=32>;
+} EXFAT_DIRENTRY_FILE_NAME <size=32, read=ReadEXFAT_DIRENTRY_FILE_NAME>;
+wstring ReadEXFAT_DIRENTRY_FILE_NAME( const EXFAT_DIRENTRY_FILE_NAME &e )
+{
+    local wstring result;
+    if (e.EntryType == EXFAT_DIRENTRY_TYPE_FILE_NAME) {
+        WStrncpy(result, e.NameCharacters, 11);
+    } else {
+        result = ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+    }
+    return result;
+}
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_GUID (0xC0)
@@ -1685,7 +1722,18 @@ typedef struct {
     USHORT Reserved1          : 14;
     GUID   VolumeGuid;               // 6..21
     BYTE   Reserved2[10];            // 22..31
-} EXFAT_DIRENTRY_VOLUME_GUID <size=32>;
+} EXFAT_DIRENTRY_VOLUME_GUID <size=32, read=ReadEXFAT_DIRENTRY_VOLUME_GUID>;
+wstring ReadEXFAT_DIRENTRY_VOLUME_GUID( const EXFAT_DIRENTRY_VOLUME_GUID &e )
+{
+    local string result;
+    if (e.EntryType == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
+        result = ReadGUID(e.VolumeGuid);
+    } else {
+        result = ReadEXFAT_DIRENTRY_TYPE(e.EntryType);
+    }
+    return result;
+}
+
 
 // TODO: EXFAT_DIRENTRY_TEXFAT_PADDING
 //    == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING (0xC1)
@@ -1841,7 +1889,7 @@ typedef struct (const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 seco
 
 wstring ReadEXFAT_DIRENTRY_SET( const EXFAT_DIRENTRY_SET &e )
 {
-    wstring result;
+    string result;
     if (exists(e.BitmapEntry[0])) {
         result = "** AllocationBitmap **";
     } else if (exists(e.UpcaseTableEntry[0])) {
@@ -1852,11 +1900,12 @@ wstring ReadEXFAT_DIRENTRY_SET( const EXFAT_DIRENTRY_SET &e )
     } else if (exists(e.PaddingEntry[0])) {
         result = "** exfat padding **";
     } else if (exists(e.VolumeGuidEntry[0])) {
-        result = ReadGUID(e.VolumeGuidEntry.VolumeGuid);
+        result = ReadGUID(e.VolumeGuidEntry[0].VolumeGuid);
     } else if (exists(e.GenericEntry[0].Typecode)) {
         SPrintf(result, "** unrecognized - %s **", ReadEXFAT_DIRENTRY_TYPE(e.GenericEntry[0].EntryType));
     } else if (exists(e.FileEntry[0])) {
-        result = e.Filename;
+        // show attributes + filename
+        SPrintf(result, "%s %s", ReadEXFAT_DIRENTRY_FILE(e.FileEntry[0]), e.Filename);
     } else {
         result = "** no information available **";
     }
@@ -1924,22 +1973,25 @@ void exfat_parse_directory_entry_set(const quad positions[], uint16 validPositio
         Assert(IsDirectoryEntrySecondary(types[i]));
     }
 
-    // Some primary entries redefine fields of the primary entry...
-    if ((types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) ||
-        (types[0] == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE) ||
-        (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) ||
-        (types[0] == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) ||
-        (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_GUID)
-        ) {
-        // allocation bitmap redefines SecondaryEntriesCount, checksum DNE
-        // upcase table redefines SecondaryEntriesCount, checksum different type and place
-        // volume label redefines SecondaryEntriesCount, checksum DNE
-        // padding is described as "repeated for entire cluster", so likely single entry
-        // ACL... who 
+    // Three primary entries have no secondary entries, and no data.
+    // For these, list the entry directly (no need to wrap in a direntry_set)
+    if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
+        FSeek(positions[0]);
+        EXFAT_DIRENTRY_VOLUME_LABEL VolumeLabel;
+        requiredSecondaryEntries = 0;    
+    } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
+        FSeek(positions[0]);
+        EXFAT_DIRENTRY_VOLUME_GUID VolumeGuid;
+        requiredSecondaryEntries = 0;
+    } else if (types[0] == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
+        FSeek(positions[0]);
+        EXFAT_DIRENTRY_TEXFAT_PADDING Padding;
+        requiredSecondaryEntries = 0;    
+    } else if ((types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) ||
+               (types[0] == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE     )) {
         FSeek(positions[0]);
         EXFAT_DIRENTRY_SET Entry(positions, types, 0);
         requiredSecondaryEntries = 0;
-    
     } else {
 
         // the remaining primary types indicate a number of secondary entries
@@ -2217,46 +2269,6 @@ typedef struct (BYTE BytesPerSectorShift) {
         boot_region[idx].Boot.RootClusterIndex,
         0 // requires use of FAT Chain
         );
-
-    // TODO: Parse root directory directory entry types (using extents for root directory)
-    // TODO: UpCaseTable structure
-    // TODO: AllocationBitmap structure
-    // TODO: VolumeLabel structure
-    // TODO: VolumeGuid structure
-    // TODO: padding structure
-    // TODO: File + Stream + Name[] structures
-    // TODO: vendor-specific entry structures (2x?)
-
-/*    
-    // TODO: initial (very basic) parsing of EXFAT Directory Entries
-    FAT_DIRECTORY( startingCluster, true ); // true because it's the root directory, and thus can contain special types
-    // which would do...
-    // 1. convert starting cluster to list of extents (volume-relative sector, length)
-    // 2. looping through the extents...
-    //    a. seek(volumen-relative-sector)
-    //    b. remaining bytes = length
-    //    c. while (remaining bytes >= entry size)...
-    //       i. read-ahead to detect type of the entry
-    //       ii. create appropriate type of the entry, if known
-    //       iii. if subdirectory, recurse...
-    //       iv. remaining bytes -= entry length
-    //    d. // get next extent and goto 2a
-    // 3. No more extents, so that's all there is.
-*/
-
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-// NEXT UP(1): Convert EXFAT_CHAINED_EXTENTS to actual file data to show in the UI.
-//             fn() to change from cluster index to file-position
-//             fn() to change from file-position to cluster index
-// NEXT UP(2): Interpret the file data for root directory as sequence of directory entries
-// TODO: function to convert from file position to cluster index
-// TODO: function to convert from cluster index to file position
-// TODO: function to update position in file, based on current position + `const EXFAT_CHAINED_EXTENTS& chain`
-// TODO: void ParseDirectory(const EXFAT_CHAINED_EXTENTS& chain, int driveIndex);
-// TODO: EXFAT_DIRENTRY_SET, which will also validate the EntrySetChecksum
-///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
 
 } EXFAT_DRIVE <open=true, optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
