@@ -865,18 +865,17 @@ struct EXFAT_EXTENT;                   // (quad ClusterCount);
 struct EXFAT_CHAINED_EXTENTS;          // (EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters);
 
 // Directory entries, each 32 bytes in length
-struct EXFAT_DIRENTRY_GENERIC;
-struct EXFAT_DIRENTRY_GENERIC_PRIMARY;
-struct EXFAT_DIRENTRY_GENERIC_SECONDARY;
-struct EXFAT_DIRENTRY_ALLOCATION_BITMAP;
-struct EXFAT_DIRENTRY_UPCASE_TABLE;
-struct EXFAT_DIRENTRY_VOLUME_LABEL;
-struct EXFAT_DIRENTRY_FILE;
-struct EXFAT_DIRENTRY_FILE_STREAM;
-struct EXFAT_DIRENTRY_FILE_NAME;
-struct EXFAT_DIRENTRY_VOLUME_GUID;
-// struct EXFAT_DIRENTRY_TEXFAT_PADDING
-// struct EXFAT_DIRENTRY_WINDOWSCE_ACL
+struct EXFAT_DIRENTRY_GENERIC;            // last fallback
+struct EXFAT_DIRENTRY_GENERIC_PRIMARY;    // primary entries
+struct EXFAT_DIRENTRY_GENERIC_SECONDARY;  // secondary entries
+struct EXFAT_DIRENTRY_ALLOCATION_BITMAP;  // CritPri
+struct EXFAT_DIRENTRY_UPCASE_TABLE;       // CritPri
+struct EXFAT_DIRENTRY_VOLUME_LABEL;       // CritPri
+struct EXFAT_DIRENTRY_FILE;               // CritPri
+struct EXFAT_DIRENTRY_FILE_STREAM;        // CritSec
+struct EXFAT_DIRENTRY_FILE_NAME;          // CritSec
+struct EXFAT_DIRENTRY_VOLUME_GUID;        // BenignPri
+struct EXFAT_DIRENTRY_TEXFAT_PADDING      // BenignPri
 
 // Finally, the structure that pieces all the above together...
 struct EXFAT_DRIVE;
@@ -921,8 +920,8 @@ typedef enum <ubyte> {
     EXFAT_DIRENTRY_TYPE_VOLUME_GUID       = 0xA0, // U=1, S=0, B=1, tc=00 (Benign Pri)
     EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING    = 0xA1, // U=1, S=0, B=1, tc=01 (Benign Pri)
     EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL     = 0xA2, // U=1, S=0, B=1, tc=02 (Benign Pri)
-    EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xC0, // U=1, S=1, B=0, tc=x (Crit Sec)
-    EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xC1, // U=1, S=1, B=0, tc=x (Crit Sec)
+    EXFAT_DIRENTRY_TYPE_FILE_STREAM       = 0xC0, // U=1, S=1, B=0, tc=00 (Crit Sec)
+    EXFAT_DIRENTRY_TYPE_FILE_NAME         = 0xC1, // U=1, S=1, B=0, tc=01 (Crit Sec)
 } EXFAT_DIRENTRY_TYPE;
 
 //================================================================
@@ -932,6 +931,7 @@ string  ReadEXFAT_CLUSTER_INFO                 (const EXFAT_CLUSTER_INFO &info  
 string  ReadEXFAT_OEM_PARAMETER_TEMPLATE       (const EXFAT_OEM_PARAMETER_TEMPLATE &p    );
 string  ReadEXFAT_BOOT_CHECKSUM_SECTOR         (const EXFAT_BOOT_CHECKSUM_SECTOR &sector );
 string  ReadEXFAT_BOOT_REGION                  (const EXFAT_BOOT_REGION &boot_region     );
+string  ReadEXFAT_DIRENTRY_TYPE                (const EXFAT_DIRENTRY_TYPE &type          );
 
 
 DWORD   CalculateExpectedExfatBootRegionChecksumUsingStartPosition (quad start, BYTE BytesPerSectorShift);
@@ -1026,6 +1026,46 @@ string ReadEXFAT_BOOT_REGION( const EXFAT_BOOT_REGION &boot_region) {
     }
     if (0 == Strlen(result)) {
         result = SPrintf(s, "EXFAT (s/n %08Xh) @ %08Xh", boot_region.Boot.VolumeSerialNumber, startof(boot_region));
+    }
+    return result;
+}
+string ReadEXFAT_DIRENTRY_TYPE(const EXFAT_DIRENTRY_TYPE& type) {
+    if (type == EXFAT_DIRENTRY_TYPE_END) {
+        return "End-of-dir (00h)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_INVALID) {
+        return "Invalid (80h)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) {
+        return "AllocationBitmap (CritPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE) {
+        return "UpcaseTable  (CritPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
+        return "VolumeLabel  (CritPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_FILE) {
+        return "File  (CritPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
+        return "VolumeGuid (BenignPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
+        return "TexFATPadding (BenignPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL) {
+        return "WindowsCEAcl (BenignPri)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
+        return "FileStream (CritSec)";
+    } else if (type == EXFAT_DIRENTRY_TYPE_FILE_NAME) {
+        return "Filename (CritSec)";
+    }
+    string result;
+    if (IsDirectoryEntryUnused(type)) {
+        SPrintf(result, "Unused (%02xh)", type);
+    } else if (IsDirectoryEntryCritical(type) && IsDirectoryEntryPrimary(type)) {
+        SPrintf(result, "Unknown CritPri (%02xh)", type);
+    } else if (IsDirectoryEntryCritical(type) && IsDirectoryEntrySecondary(type)) {
+        SPrintf(result, "Unknown CritSec (%02xh)", type);
+    } else if (IsDirectoryEntryBenign(type) && IsDirectoryEntryPrimary(type)) {
+        SPrintf(result, "Unknown BenignPri (%02xh)", type);
+    } else if (IsDirectoryEntryBenign(type) && IsDirectoryEntrySecondary(type)) {
+        SPrintf(result, "Unknown BenignSec (%02xh)", type);
+    } else {
+        Assert(false); // impossible to reach here
     }
     return result;
 }
@@ -1469,7 +1509,7 @@ typedef struct {
     UBYTE CustomDefined[19] <format=hex>;
     DWORD FirstClusterIndex <format=decimal>;
     UQUAD DataLength <format=hex>;
-} EXFAT_DIRENTRY_GENERIC;
+} EXFAT_DIRENTRY_GENERIC <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
@@ -1487,7 +1527,7 @@ typedef struct {
     UBYTE  CustomDefined[14];       // 6..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_GENERIC_PRIMARY;
+} EXFAT_DIRENTRY_GENERIC_PRIMARY <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0
@@ -1504,7 +1544,7 @@ typedef struct {
     UBYTE  CustomDefined[18];       // 2..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_GENERIC_SECONDARY;
+} EXFAT_DIRENTRY_GENERIC_SECONDARY <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP (0x81)
@@ -1519,7 +1559,7 @@ typedef struct {
     UBYTE  Reserved[18];            // 6..19   -- flags and other stuff?
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_ALLOCATION_BITMAP;
+} EXFAT_DIRENTRY_ALLOCATION_BITMAP <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE (0x82)
@@ -1534,7 +1574,7 @@ typedef struct {
     UBYTE  __[12];                  // 8..19
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
-} EXFAT_DIRENTRY_UPCASE_TABLE;
+} EXFAT_DIRENTRY_UPCASE_TABLE <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL (0x83)
@@ -1547,7 +1587,7 @@ typedef struct {
     UBYTE    CharacterCount;        // 1
     wchar_t  Label[11];             // 2..23
     UBYTE    Reserved[8];           // 24..31 -- normally DataLength
-} EXFAT_DIRENTRY_VOLUME_LABEL;
+} EXFAT_DIRENTRY_VOLUME_LABEL <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;  // 0 == EXFAT_DIRENTRY_TYPE_FILE (0x85)
@@ -1580,7 +1620,7 @@ typedef struct {
     UBYTE   Accessed10msIncrement;  // 22 -- BUGBUG -- Is this right?
     UBYTE   _;                      // 23
     UBYTE   Reserved2[8];           // 24..31
-} EXFAT_DIRENTRY_FILE;
+} EXFAT_DIRENTRY_FILE <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_FILE_STREAM (0xA0)
@@ -1603,7 +1643,7 @@ typedef struct {
     DWORD  FirstCluster;            // 20..23
     UQUAD  DataLength;              // 24..31
 
-} EXFAT_DIRENTRY_FILE_STREAM;
+} EXFAT_DIRENTRY_FILE_STREAM <size=32>;
 
 
 typedef struct {
@@ -1618,7 +1658,7 @@ typedef struct {
     UBYTE NoFatChain          : 1;
 
     wchar_t NameCharacters[15];
-} EXFAT_DIRENTRY_FILE_NAME;
+} EXFAT_DIRENTRY_FILE_NAME <size=32>;
 
 typedef struct {
     EXFAT_DIRENTRY_TYPE EntryType;   // 0 == EXFAT_DIRENTRY_TYPE_VOLUME_GUID (0xC0)
@@ -1636,7 +1676,7 @@ typedef struct {
     USHORT Reserved1          : 14;
     GUID   VolumeGuid;               // 6..21
     BYTE   Reserved2[10];            // 22..31
-} EXFAT_DIRENTRY_VOLUME_GUID;
+} EXFAT_DIRENTRY_VOLUME_GUID <size=32>;
 
 // TODO: EXFAT_DIRENTRY_TEXFAT_PADDING
 //    == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING (0xC1)
@@ -1846,7 +1886,6 @@ void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
         FSeek(clusterStart);
 
         for (k = 0; k < entriesThisExtent && !eod; k++) {
-            // TODO: read-ahead to create proper type of struct
             currentEntryStart = clusterStart + (k*0x20);
             currentEntryType = ReadUByte( currentEntryStart );
             if (currentEntryType == EXFAT_DIRENTRY_TYPE_END) {
@@ -1858,7 +1897,6 @@ void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
             } else if (currentEntryType == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
                 EXFAT_DIRENTRY_VOLUME_LABEL volumeLabel;
             } else if (currentEntryType == EXFAT_DIRENTRY_TYPE_FILE) {
-                // TODO: file is .. special .. needing more entries around it
                 EXFAT_DIRENTRY_FILE file;
             } else if (currentEntryType == EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
                 EXFAT_DIRENTRY_FILE_STREAM fileStream;
