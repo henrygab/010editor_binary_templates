@@ -1934,27 +1934,28 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
             EXFAT_DIRENTRY_GENERIC_SECONDARY UnrecognizedEntry;
         }    
     }
+    local quad endPos = FTell();
+
     Assert(exists(NameEntry[0]));
     Assert(exists(StreamEntry[0]));
 
+    FSeek( startof(StreamEntry[0].ValidDataLength) );
+    UQUAD ValidDataLength;
+
+
     // Now parse the name of the file...
     Filename = "";
-    for (i = 0; exists(NameEntry[i]); i++) {
+    for (i = 0; exists(this.NameEntry[i]); i++) {
         Filename += NameEntry[i].NameCharacters;
     }
     if (WStrlen(Filename) > StreamEntry[0].NameCharCount) {
         Filename = WSubStr(Filename, StreamEntry[0].NameCharCount);
     }
 
-    FSeek( startof(StreamEntry[0].ValidDataLength) );
-    UQUAD ValidDataLength;
     
     // for non-zero size allocated (even if zero bytes valid),
     // show the allocated buffers
-    //if (StreamEntry[0].DataLength != 0) {
-
-#define ODD_ERROR
-#ifdef ODD_ERROR
+    if (StreamEntry[0].DataLength != 0) {
         if (FileEntry.Attributes.Directory) {
             FSeek( startof(StreamEntry[0].FirstCluster) );
             EXFAT_DIRECTORY Directory(
@@ -1964,20 +1965,17 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
                 StreamEntry[0].DataLength
                 );
         } else {
-#endif // ODD_ERROR
             FSeek( startof(StreamEntry[0].FirstCluster) );
             EXFAT_FILE File(
                 DriveNumber,
                 StreamEntry[0].FirstCluster,
                 StreamEntry[0].NoFatChain,
-                StreamEntry[0].DataLength
+                StreamEntry[0].ValidDataLength
                 );
-#ifdef ODD_ERROR
         }
-#endif // ODD_ERROR
-    //}
+    }
+    FSeek(endPos);
     return;
-
 
 } EXFAT_DIRENTRY_SET <optimize=false, read=ReadEXFAT_DIRENTRY_SET>; 
 
@@ -1998,8 +1996,8 @@ wstring ReadEXFAT_DIRENTRY_SET( const EXFAT_DIRENTRY_SET &e )
     } else if (exists(e.GenericEntry[0].Typecode)) {
         SPrintf(result, "** unrecognized - %s **", ReadEXFAT_DIRENTRY_TYPE(e.GenericEntry[0].EntryType));
     } else if (exists(e.FileEntry[0])) {
-        // show attributes + filename
-        SPrintf(result, "%s %s", ReadEXFAT_DIRENTRY_FILE(e.FileEntry[0]), e.Filename);
+        // show attributes + filename + size
+        SPrintf(result, "%s %s  %d bytes", ReadEXFAT_DIRENTRY_FILE(e.FileEntry[0]), e.Filename, e.StreamEntry[0].ValidDataLength);
     } else {
         result = "** no information available **";
     }
