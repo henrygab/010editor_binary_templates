@@ -1,3 +1,32 @@
+// TODO: change to first-class structures
+// Thus, rather than [EXFAT_DIRENTRY_SET] being used for all these,
+// instead, parse known types as their own types....
+// EXFAT_DIRECTORY root will be accessible from drive[i]
+//   EXFAT_ALLOCATION_BITMAP will be in root directory and contain
+//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
+//        EXFAT_DIRENTRY_* as used to compose this structure
+//     EXFAT_CHAINED_EXTENTS with extents (if any)
+//     EXFAT_DATA with data (if any)
+//   EXFAT_UPCASE_TABLE will be in root directory and contain
+//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
+//        EXFAT_DIRENTRY_* as used to compose this structure
+//     EXFAT_CHAINED_EXTENTS with extents (if any)
+//     EXFAT_DATA with data (if any)
+//   EXFAT_VOLUME_LABEL will be in root directory and contain
+//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
+//        EXFAT_DIRENTRY_* as used to compose this structure
+//   EXFAT_VOLUME_GUID will be in root directory and contain
+//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
+//        EXFAT_DIRENTRY_* as used to compose this structure
+//   EXFAT_FILE*, each of which contains...
+//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
+//        EXFAT_DIRENTRY_* as used to compose this structure
+//     EXFAT_CHAINED_EXTENTS with extents (if any)
+//     EXFAT_DATA with data (if any)
+//   EXFAT_DIRECTORY*, each of which (recursive definition...)
+//     
+
+
 //------------------------------------------------
 //--- 010 Editor v7.0 Binary Template
 //
@@ -814,7 +843,7 @@ struct EXFAT_EXTENT;                   // (quad ClusterCount);
 struct EXFAT_CHAINED_EXTENTS;          // (EXFAT_FAT_TABLE &fat_table, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters);
 
 struct EXFAT_DIRECTORY;                // (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters);
-struct EXFAT_FILE;                     // (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters, UQUAD ValidDataLength);
+struct EXFAT_FILE;                     // (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, boolean isContiguousClusters, UQUAD ValidDataLength);
 
 
 struct EXFAT_DIRENTRY_GENERIC;            // last fallback
@@ -1829,7 +1858,7 @@ void   exfat_add_invalid_directory_entry(const quad position)
 // REQUIRES: first entry is primary, all remaining entries are secondary
 typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[], uint16 secondaryEntryCount)
 {
-    local int startPos = FTell();
+    local int startPos <hidden=true> = FTell();
     local int DriveNumber = DriveNum;
     local int i <hidden=true>;
     Printf("Creating EXFAT_DIRENTRY_SET with %d secondary entries\r\n", secondaryEntryCount);
@@ -1843,7 +1872,7 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
         EXFAT_FILE Bitmap(
             DriveNumber,
             BitmapEntry.FirstCluster, // first cluster index
-            0,                        // bitmap always uses FAT chain
+            false,                    // bitmap always uses FAT chain
             BitmapEntry.DataLength
             );
         FSeek( startPos + 32 );
@@ -1856,7 +1885,7 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
         EXFAT_FILE UpcaseTable(
             DriveNumber,
             UpcaseTableEntry.FirstCluster, // first cluster index
-            0,                             // upcase table always uses FAT chain
+            false,                             // upcase table always uses FAT chain
             UpcaseTableEntry.DataLength
             );
         FSeek( startPos + 32 );
@@ -1888,6 +1917,7 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
                 GenericPrimaryEntry.DataLength
                 );
         }
+        FSeek(startPos + 32);
         return;
     }
 
@@ -2061,6 +2091,7 @@ void exfat_parse_directory_entry_set(int DriveNum, const quad positions[], uint1
                 );
             return;
         } else {
+            // TODO: change to first-class structures
             FSeek(positions[0]);
             EXFAT_DIRENTRY_SET Entry(DriveNumber, positions, types, requiredSecondaryEntries);
         }
@@ -2220,19 +2251,29 @@ void exfat_parse_extents_basic(int DriveNumber, const EXFAT_CHAINED_EXTENTS &e)
     }
 }
 
-typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters, UQUAD ValidDataLength) {
-    local quad startPos = FTell();
+typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, boolean isContiguousClusters, UQUAD ValidDataLength) {
+    local quad startPos <hidden=true> = FTell();
+    local quad clusterCount <hidden=true> = 0;
+    local UQUAD ValidBytes = ValidDataLength;  // show as local variable
 
-    EXFAT_CHAINED_EXTENTS extents(
-        DriveNumber,
-        startingClusterIndex,
-        contiguousClusters
-        );
-    exfat_parse_extents_as_file_data(
-        DriveNumber,
-        extents,
-        ValidDataLength
-        );
+    if (isContiguousClusters) {
+        clusterCount += ValidDataLength / drive[DriveNumber].BytesPerCluster;
+        if (0 != (ValidDataLength % drive[DriveNumber].BytesPerCluster)) {
+            clusterCount++;
+        }
+    }
+    if (ValidDataLength != 0) {
+        EXFAT_CHAINED_EXTENTS extents(
+            DriveNumber,
+            startingClusterIndex,
+            clusterCount
+            );
+        exfat_parse_extents_as_file_data(
+            DriveNumber,
+            extents,
+            ValidDataLength
+            );
+    }
     FSeek(startPos+4); // HACK -- avoid assertion that structure end is before structure start....
 } EXFAT_FILE <optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
