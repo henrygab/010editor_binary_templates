@@ -2277,15 +2277,30 @@ typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, boolea
     FSeek(startPos+4); // HACK -- avoid assertion that structure end is before structure start....
 } EXFAT_FILE <optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
-typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, QUAD contiguousClusters) {
+typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, boolean isContiguousClusters, UQUAD ValidDataLength) {
+    local quad startPos <hidden=true> = FTell();
+    local quad clusterCount <hidden=true> = 0;
+    local int isRoot = startof(this) == startof(drive[DriveNumber].root);
+    // at root directory, ValidDataLength is unknown (zero) and isContiguousClusters is FALSE
+    // at other directories, any input combination is valid
 
-    EXFAT_CHAINED_EXTENTS extents(
-        DriveNumber,
-        startingClusterIndex,
-        contiguousClusters
-        );
-    exfat_parse_extents_as_directory(DriveNumber, extents);
+    if (isContiguousClusters) {
+        Assert(ValidDataLength != 0);
+        clusterCount += ValidDataLength / drive[DriveNumber].bytesPerCluster;
+        if (0 != (ValidDataLength % drive[DriveNumber].bytesPerCluster)) {
+            clusterCount++;
+        }
+    }
 
+    if (isRoot || (clusterCount != 0)) {
+        EXFAT_CHAINED_EXTENTS extents(
+            DriveNumber,
+            startingClusterIndex,
+            clusterCount
+            );
+        exfat_parse_extents_as_directory(DriveNumber, extents);
+    }
+    FSeek(startPos+4); // HACK -- avoid assertion that structure end is before structure start....
 } EXFAT_DIRECTORY <optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
 
 typedef struct (BYTE BytesPerSectorShift) {
@@ -2353,7 +2368,8 @@ typedef struct (BYTE BytesPerSectorShift) {
     EXFAT_DIRECTORY root(
         DriveNum,
         boot_region[idx].Boot.RootClusterIndex,
-        0 // requires use of FAT Chain
+        false,  // requires use of FAT Chain
+        0  // root directory has no idea how many valid bytes there could be... (defined by FAT chain)
         );
 
 } EXFAT_DRIVE <open=true, optimize=false>; // cannot specify size attribute due to bug as of v9.0.1
