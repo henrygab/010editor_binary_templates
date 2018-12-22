@@ -1946,8 +1946,37 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
         Filename = WSubStr(Filename, StreamEntry[0].NameCharCount);
     }
 
-    // TODO: Add chained extents
-    // TODO: Add File Data
+    FSeek( startof(StreamEntry[0].ValidDataLength) );
+    UQUAD ValidDataLength;
+    
+    // for non-zero size allocated (even if zero bytes valid),
+    // show the allocated buffers
+    //if (StreamEntry[0].DataLength != 0) {
+
+#define ODD_ERROR
+#ifdef ODD_ERROR
+        if (FileEntry.Attributes.Directory) {
+            FSeek( startof(StreamEntry[0].FirstCluster) );
+            EXFAT_DIRECTORY Directory(
+                DriveNumber,
+                StreamEntry[0].FirstCluster,
+                StreamEntry[0].NoFatChain,
+                StreamEntry[0].DataLength
+                );
+        } else {
+#endif // ODD_ERROR
+            FSeek( startof(StreamEntry[0].FirstCluster) );
+            EXFAT_FILE File(
+                DriveNumber,
+                StreamEntry[0].FirstCluster,
+                StreamEntry[0].NoFatChain,
+                StreamEntry[0].DataLength
+                );
+#ifdef ODD_ERROR
+        }
+#endif // ODD_ERROR
+    //}
+    return;
 
 
 } EXFAT_DIRENTRY_SET <optimize=false, read=ReadEXFAT_DIRENTRY_SET>; 
@@ -2257,8 +2286,8 @@ typedef struct (int DriveNumber, EXFAT_CLUSTER_INFO startingClusterIndex, boolea
     local UQUAD ValidBytes = ValidDataLength;  // show as local variable
 
     if (isContiguousClusters) {
-        clusterCount += ValidDataLength / drive[DriveNumber].BytesPerCluster;
-        if (0 != (ValidDataLength % drive[DriveNumber].BytesPerCluster)) {
+        clusterCount += ValidDataLength / drive[DriveNumber].bytesPerCluster;
+        if (0 != (ValidDataLength % drive[DriveNumber].bytesPerCluster)) {
             clusterCount++;
         }
     }
