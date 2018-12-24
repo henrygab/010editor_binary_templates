@@ -1429,11 +1429,17 @@ string ReadEXFAT_CHAINED_EXTENTS(const EXFAT_CHAINED_EXTENTS &e)
 {
     local string result;
     local int i;
-    for (i = 0; exists(e.extent[i]); i++) {
-        result += ReadEXFAT_EXTENT(e.extent[i]);
-        result += "->";
+
+    if (!exists(e.end_of_chain)) {
+        result += ReadEXFAT_EXTENT(e.extent[0]);
+        result += " (contig)";
+    } else {
+        for (i = 0; exists(e.extent[i]); i++) {
+            result += ReadEXFAT_EXTENT(e.extent[i]);
+            result += "->";
+        }
+        result += "eoc";
     }
-    result += "eoc";
     return result;
 }
 
