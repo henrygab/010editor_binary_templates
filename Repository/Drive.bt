@@ -3,9 +3,9 @@
 //
 //      File: Drive.bt
 //   Authors: SweetScape Software, Benjamin Vernoux
-//   Version: 2.6
+//   Version: 3.0
 //   Purpose: Parse logical and physical drives including 
-//            MBR, FAT12, FAT16, FAT32, HFS, NTFS and extended partitions.
+//            MBR, FAT12, FAT16, FAT32, exFAT, HFS, NTFS and extended partitions.
 //            Can display subdirectories and data for individual
 //            files. Note that some NTFS drives
 //            may not work properly (see file comments).
@@ -13,8 +13,9 @@
 // File Mask: Drive*,Physical*
 //  ID Bytes: [+510] 55 AA,[+1024] 48 2B,[+1024] 48 58
 //   History: 
+//   3.0   2018-12-24 HenryGab: Add support for exFAT and 4k native sector sizes.
 //   2.6   2018-11-14 HenryGab: Add support for FAT12.
-//   2.4   2018-11-13 HenryGab: Fix file system recognition sequence, support partition-less media
+//   2.4   2018-11-13 HenryGab: Fix file system recognition sequence
 //   2.2   2018-10-23 HenryGab: Fix multiple bugs in FAT16/FAT32.
 //   2.0   2016-07-06 SweetScape Software: Added support for HFS drives (macOS/iOS).
 //   1.1   2016-06-14 SweetScape Software: Added support for EFI partitions.
@@ -1928,7 +1929,7 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
     if (StreamEntry[0].DataLength != 0) {
         if (FileEntry.Attributes.Directory) {
             FSeek( startof(this.StreamEntry[0].FirstCluster) );
-            EXFAT_DIRECTORY_CONTENTS Directory(
+            EXFAT_DIRECTORY_CONTENTS Contents(
                 DriveNumber,
                 StreamEntry[0].FirstCluster,
                 StreamEntry[0].NoFatChain,
@@ -1959,7 +1960,7 @@ typedef struct (int DriveNum, const quad positions[], EXFAT_DIRENTRY_TYPE types[
     local int startPos <hidden=true> = FTell();
     local int DriveNumber = DriveNum;
     local int i <hidden=true>;
-    Printf("Creating EXFAT_DIRENTRY_SET with %d secondary entries\r\n", secondaryEntryCount);
+    //Printf("Creating EXFAT_DIRENTRY_SET with %d secondary entries\r\n", secondaryEntryCount);
     FSeek(positions[0]);
     EXFAT_DIRENTRY_GENERIC_PRIMARY GenericPrimaryEntry;
     if ((GenericPrimaryEntry.AllocationPossible) &&
@@ -2004,7 +2005,7 @@ void exfat_parse_directory_entry_set(int DriveNum, const quad positions[], uint1
     // positions == array of file positions, one per directory entry, potentially across clusters
     // validPositionCount == number of directory entries that can be parsed
     //
-    Printf("Parsing potential directory entry set (%d entries)\r\n", validPositionCount);
+    //Printf("Parsing potential directory entry set (%d entries)\r\n", validPositionCount);
 
     Assert(validPositionCount >=   1);
     Assert(validPositionCount <= 256);
@@ -2019,7 +2020,7 @@ void exfat_parse_directory_entry_set(int DriveNum, const quad positions[], uint1
 
     for (i = 0; i < validPositionCount; i++) {
         types[i] = ReadUByte(positions[i]);
-        Printf("    direntry at %08xh, type == %02x (%s)\r\n", positions[i], types[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
+        //Printf("    direntry at %08xh, type == %02x (%s)\r\n", positions[i], types[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
     }
     // a failure here is a coding error in the splitting of entries for parsing
     for (i = 1; i < validPositionCount; i++) {
