@@ -935,6 +935,12 @@ boolean IsDirectoryEntryPrimary  (const EXFAT_DIRENTRY_TYPE e) { return 0 == (e 
 boolean IsDirectoryEntrySecondary(const EXFAT_DIRENTRY_TYPE e) { return 0 != (e & 0x40); }
 boolean IsDirectoryEntryCritical (const EXFAT_DIRENTRY_TYPE e) { return 0 == (e & 0x20); }
 boolean IsDirectoryEntryBenign   (const EXFAT_DIRENTRY_TYPE e) { return 0 != (e & 0x20); }
+boolean IsDirectoryEntryCriticalPrimary  (const EXFAT_DIRENTRY_TYPE e) { return IsDirectoryEntryCritical(e) && IsDirectoryEntryPrimary(e)  ; }
+boolean IsDirectoryEntryCriticalSecondary(const EXFAT_DIRENTRY_TYPE e) { return IsDirectoryEntryCritical(e) && IsDirectoryEntrySecondary(e); }
+boolean IsDirectoryEntryBenignPrimary    (const EXFAT_DIRENTRY_TYPE e) { return IsDirectoryEntryBenign(e)   && IsDirectoryEntryPrimary(e)  ; }
+boolean IsDirectoryEntryBenignSecondary  (const EXFAT_DIRENTRY_TYPE e) { return IsDirectoryEntryBenign(e)   && IsDirectoryEntrySecondary(e); }
+
+
 
 //================================================================
 // exFAT constants
@@ -1810,7 +1816,13 @@ typedef struct(int DriveNumber) {
     FSeek(end); 
 } EXFAT_ALLOCATION_BITMAP <optimize=false>;
 
-
+typedef struct(int DriveNumber) {
+    EXFAT_DIRENTRY_UPCASE_TABLE UpcaseTableEntry;
+    local quad end <hidden=true> = FTell();
+    FSeek(startof(UpcaseTableEntry.FirstCluster));
+    EXFAT_FILE BitmapData(DriveNumber, UpcaseTableEntry.FirstCluster, false, UpcaseTableEntry.DataLength);
+    FSeek(end); 
+} EXFAT_UPCASE_TABLE <optimize=false>;
 
 // TODO: EXFAT_DIRENTRY_WINDOWSCE_ACL
 //    == EXFAT_DIRENTRY_TYPE_WINDOWSCE_ACL (0xC2)
@@ -2043,8 +2055,8 @@ wstring ReadEXFAT_DIRENTRY_SET( const EXFAT_DIRENTRY_SET &e )
 // take a set of exfat_direntry_* entry positions, and covert into a appropriate higher-level types
 void exfat_parse_directory_entry_set(int DriveNum, const quad positions[], uint16 validPositionCount)
 {
-    local int DriveNumber = DriveNum;
-    local boolean processedCount = 0;
+    local int DriveNumber <hidden=true> = DriveNum;
+    local boolean processedCount <hidden=true> = 0;
 
     // callers are expected to call this routine with:
     //     { UNUSED_ENTRY } // unused entry, one at a time
@@ -2060,121 +2072,109 @@ void exfat_parse_directory_entry_set(int DriveNum, const quad positions[], uint1
     Assert(validPositionCount >=   1);
     Assert(validPositionCount <= 256);
 
+
     // first, read the type for each entry to be parsed...
     local EXFAT_DIRENTRY_TYPE types[validPositionCount];
-    local int i;
     local uint16 requiredSecondaryEntries;
     local uint16 calculatedChecksum;
     local uint16 actualChecksum;
+    local int i <hidden=true>;
 
     for (i = 0; i < validPositionCount; i++) {
         types[i] = ReadUByte(positions[i]);
         Printf("    direntry at %08xh, type == %02x (%s)\r\n", positions[i], types[i], ReadEXFAT_DIRENTRY_TYPE(types[i]) );
     }
-
-    if ((!processedCount) && (types[0] == EXFAT_DIRENTRY_TYPE_END)) {
-        // end-of-directory is always exactly one entry, regardless of
-        // the other bytes in the entry...
-        Assert(validPositionCount == 1);
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_END EoD;
-        processedCount = 1;
-    }
-        
-
-    // If "unused" entry, add it by itself
-    if ((!processedCount) && IsDirectoryEntryUnused(types[0])) {
-        Assert(validPositionCount == 1);
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_UNUSED Unused;
-        processedCount = 1;
-    }
-
-    if ((!processedCount) && (types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP)) {
-        FSeek(positions[0]);
-        EXFAT_ALLOCATION_BITMAP AllocationBitmap(DriveNum);
-        processedCount = 1;
-    }        
-
-    // if first entry is secondary, or processed any entries, 
-    // exit the routine after adding any remaining secondary
-    // entries as invalid entries
-    if (IsDirectoryEntrySecondary(types[0]) || (processedCount != 0 )) {
-        for (i = processedCount; i < validPositionCount; i++) {
-            // a failure here is a coding error in the splitting of entries for parsing
-            Assert(IsDirectoryEntrySecondary(types[i]));
-            // only known secondary types are FILE_STREAM and FILE_NAME
-            exfat_add_invalid_directory_entry(positions[i]);
-        }
-        return;
-    }
-
-    // else first entry is a primary entry; ensure remaining are secondary
     // a failure here is a coding error in the splitting of entries for parsing
     for (i = 1; i < validPositionCount; i++) {
         Assert(IsDirectoryEntrySecondary(types[i]));
     }
 
-    // Three primary entries have no secondary entries, and no data.
-    // For these, list the entry directly (no need to wrap in a direntry_set)
-    if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_LABEL) {
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_VOLUME_LABEL VolumeLabel;
-        requiredSecondaryEntries = 0;    
-    } else if (types[0] == EXFAT_DIRENTRY_TYPE_VOLUME_GUID) {
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_VOLUME_GUID VolumeGuid;
-        requiredSecondaryEntries = 0;
-    } else if (types[0] == EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING) {
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_TEXFAT_PADDING Padding;
-        requiredSecondaryEntries = 0;    
-    } else if ((types[0] == EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP) ||
-               (types[0] == EXFAT_DIRENTRY_TYPE_UPCASE_TABLE     )) {
-        FSeek(positions[0]);
-        EXFAT_DIRENTRY_SET Entry(DriveNumber, positions, types, 0);
-        requiredSecondaryEntries = 0;
-    } else {
-
-        // the remaining primary types indicate a number of secondary entries
-        // and a hash of the directory entry set....
-
-        // get count of needed secondary entries from first entry
-        requiredSecondaryEntries = ReadUByte(positions[0]+1);
-        if (requiredSecondaryEntries > (validPositionCount-1)) {
-            // not enough entries, so just add them all as invalid entries
-            // and add all the secondary entries...
-            for (i = 0; i < validPositionCount; i++) {
-                exfat_add_invalid_directory_entry(positions[i]);
+    FSeek(positions[0]);
+    switch(types[0]) {
+        case EXFAT_DIRENTRY_TYPE_END:
+            // end-of-directory is always exactly one entry, regardless of
+            // the other bytes in the entry...
+            Assert(validPositionCount == 1);
+            EXFAT_DIRENTRY_END EoD;
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_ALLOCATION_BITMAP:
+            EXFAT_ALLOCATION_BITMAP AllocationBitmap(DriveNum);
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_VOLUME_LABEL:
+            EXFAT_DIRENTRY_VOLUME_LABEL VolumeLabel;
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_TEXFAT_PADDING:
+            EXFAT_DIRENTRY_TEXFAT_PADDING Padding;
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_VOLUME_GUID:
+            EXFAT_DIRENTRY_VOLUME_GUID VolumeGuid;
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_UPCASE_TABLE:
+            EXFAT_UPCASE_TABLE UpcaseTable(DriveNumber);
+            processedCount = 1;
+            break;
+        case EXFAT_DIRENTRY_TYPE_FILE:
+            // somewhat more complex...
+            requiredSecondaryEntries = ReadUByte(positions[0]+1);
+            if (requiredSecondaryEntries > (validPositionCount-1)) {
+                // not enough entries
+                break;
             }
-            Printf(
-                "    Invalid entries due to entry 0 needing %d entries, only %d secondary entries available\r\n",
-                requiredSecondaryEntries,
-                validPositionCount-1
-                );
-            return;
-        } else if ( // FILE requires STREAM followed by 1+ FILE_NAME
-            (types[0] == EXFAT_DIRENTRY_TYPE_FILE)
-            && (   (types[1] != EXFAT_DIRENTRY_TYPE_FILE_STREAM)
-                || (types[2] != EXFAT_DIRENTRY_TYPE_FILE_NAME)
-                )   // FILE requires STREAM followed by 1+ FILE_NAME
-            ) {
-            for (i = 0; i < validPositionCount; i++) {
-                exfat_add_invalid_directory_entry(positions[i]);
+            if (types[1] != EXFAT_DIRENTRY_TYPE_FILE_STREAM) {
+                // FILE_STREAM entry is necessary
+                break;
             }
-            Printf(
-                "    Invalid entries due to FILE not followed by needed STREAM? and FILE_NAME+ entries\r\n"
-                );
-            return;
-        } else {
-            // TODO: change to first-class structures
-            FSeek(positions[0]);
-            EXFAT_DIRENTRY_SET Entry(DriveNumber, positions, types, requiredSecondaryEntries);
-        }
+            if (types[2] != EXFAT_DIRENTRY_TYPE_FILE_NAME) {
+                // FILE requires STREAM followed by 1+ FILE_NAME
+                break;
+            }
+            if (ReadUByte(positions[0]+4) & 0x10) { // then it's a directory
+                // QWERTY - change to first-class structures EXFAT_DIRECTORY
+                EXFAT_DIRENTRY_SET Entry(DriveNumber, positions, types, requiredSecondaryEntries);
+            } else {
+                // QWERTY - change to first-class structures EXFAT_FILE
+                EXFAT_DIRENTRY_SET Entry(DriveNumber, positions, types, requiredSecondaryEntries);
+            }
+            processedCount = requiredSecondaryEntries + 1;
+            break;            
+        default:
+            if (IsDirectoryEntryUnused(types[0])) {
+                EXFAT_DIRENTRY_UNUSED Unused;
+                processedCount = 1;
+                break;
+            }
+            if (IsDirectoryEntryBenignPrimary(types[0])) {
+                requiredSecondaryEntries = ReadUByte(positions[0]+1);
+                if (requiredSecondaryEntries > (validPositionCount-1)) {
+                    // not enough entries
+                    break;
+                }
+                // QWERTY - change to first-class structure EXFAT_BENIGN_PRIMARY
+                EXFAT_DIRENTRY_SET BenignPrimarySet;
+                processedCount = 1;
+                break;
+            }
+            // else it's not known entry, not benign primary, not unused, and not end-of-directory...
+            // that makes it invalid...
+            break;
     }
-    
-    // add any extra secondary entries not required by the primary
-    for (i = 1+requiredSecondaryEntries; i < validPositionCount; i++) {
+
+    // if processed at least one entry, any contiguous benign secondary entries are allowed.
+    while ((processedCount != 0) && (processedCount < validPositionCount) &&
+            IsDirectoryEntryBenignSecondary(types[processedCount])) {
+        // QWERTY - make this a struct all its own...
+        EXFAT_DIRENTRY_GENERIC_SECONDARY AssociatedBenignSecondary;
+        processedCount++;
+    }
+
+    // any remaining entries are invalid.
+    for (i = processedCount; i < validPositionCount; i++) {
+        // only known secondary types are FILE_STREAM and FILE_NAME
         exfat_add_invalid_directory_entry(positions[i]);
     }
     return;
