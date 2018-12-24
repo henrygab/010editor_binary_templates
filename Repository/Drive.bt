@@ -1,32 +1,3 @@
-// TODO: change to first-class structures
-// Thus, rather than [EXFAT_DIRENTRY_SET] being used for all these,
-// instead, parse known types as their own types....
-// EXFAT_DIRECTORY root will be accessible from drive[i]
-//   EXFAT_ALLOCATION_BITMAP will be in root directory and contain
-//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
-//        EXFAT_DIRENTRY_* as used to compose this structure
-//     EXFAT_CHAINED_EXTENTS with extents (if any)
-//     EXFAT_DATA with data (if any)
-//   EXFAT_UPCASE_TABLE will be in root directory and contain
-//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
-//        EXFAT_DIRENTRY_* as used to compose this structure
-//     EXFAT_CHAINED_EXTENTS with extents (if any)
-//     EXFAT_DATA with data (if any)
-//   EXFAT_VOLUME_LABEL will be in root directory and contain
-//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
-//        EXFAT_DIRENTRY_* as used to compose this structure
-//   EXFAT_VOLUME_GUID will be in root directory and contain
-//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
-//        EXFAT_DIRENTRY_* as used to compose this structure
-//   EXFAT_FILE*, each of which contains...
-//     EXFAT_DIRENTRY_SET will bit in the bitmap structure and contain
-//        EXFAT_DIRENTRY_* as used to compose this structure
-//     EXFAT_CHAINED_EXTENTS with extents (if any)
-//     EXFAT_DATA with data (if any)
-//   EXFAT_DIRECTORY*, each of which (recursive definition...)
-//     
-
-
 //------------------------------------------------
 //--- 010 Editor v7.0 Binary Template
 //
@@ -1240,6 +1211,27 @@ DWORD CalculateExpectedExfatBootRegionChecksum(const EXFAT_BOOT_REGION &boot_reg
 // exFAT -- Unorganized from here on out   :-)
 //================================================================
 
+typedef struct {
+    uint32 DoubleSeconds : 5 <format=decimal>; // 0..29 == 0..58 seconds
+    uint32 Minutes       : 6 <format=decimal>; // 0..59
+    uint32 Hour          : 5 <format=decimal>; // 0..23
+    uint32 Day           : 5 <format=decimal>; // 1..31 // Gregorian calendar
+    uint32 Month         : 4 <format=decimal>; // 1..12 // Gregorian calendar
+    uint32 Year          : 7 <format=decimal>; // 0..127 == 1980..2107
+} EXFAT_TIMESTAMP <read=ReadEXFAT_TIMESTAMP, format=decimal>;
+string ReadEXFAT_TIMESTAMP( const EXFAT_TIMESTAMP &t ) {
+    local string result;
+    SPrintf(
+        result,
+        "%04d-%02d-%02dT%02d:%02d:%02d",
+        t.Year + 1980, t.Month, t.Day, t.Hour, t.Minutes, t.DoubleSeconds*2
+        );
+    return result;
+}
+
+
+
+
 typedef struct (BYTE BytesPerSectorShift_Parameter) {
     Assert(BytesPerSectorShift_Parameter >= 9); // min 512 bytes per sector
     Assert(BytesPerSectorShift_Parameter <= 12); // max 4096 bytes per sector
@@ -1692,17 +1684,13 @@ typedef struct {
         USHORT Reserved2 : 10;
     } Attributes;
     BYTE Reserved1[2];              // 6..7
-    DOSDATE CreatedDate;            // 8..9
-    DOSTIME CreatedTime;            // 10..11
-    DOSDATE ModifiedDate;           // 12..13
-    DOSTIME ModifiedTime;           // 14..15
-    DOSDATE AccessedDate;           // 16..17
-    DOSTIME AccessedTime;           // 18..19
+    EXFAT_TIMESTAMP Created;        // 8..11
+    EXFAT_TIMESTAMP Modified;       // 12..15
+    EXFAT_TIMESTAMP Accessed;       // 16..19
     UBYTE   Created10msIncrement;   // 20
     UBYTE   Modified10msIncrement;  // 21
-    UBYTE   Accessed10msIncrement;  // 22 -- BUGBUG -- Is this right?
-    UBYTE   _;                      // 23
-    UBYTE   Reserved2[8];           // 24..31
+    UBYTE   __[3];                  // 22..24 -- three identical bytes...
+    UBYTE   Reserved2[7];           // 25..31
 } EXFAT_DIRENTRY_FILE <size=32, read=ReadEXFAT_DIRENTRY_FILE>;
 wstring ReadEXFAT_DIRENTRY_FILE( const EXFAT_DIRENTRY_FILE &e )
 {
