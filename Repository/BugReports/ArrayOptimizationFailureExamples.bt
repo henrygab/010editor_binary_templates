@@ -85,6 +85,7 @@ FSeek(pos); BAR delta[2] <optimize=true>;
 pos = 0x6c; // start of exFAT partition + 0x6c == BytesPerSectorShift
 // Correct: [0] uses 0xC bytes, [1] uses 0x20 bytes
 FSeek(pos); BAZ epsilon; BAZ epsilon;
+
 // Silent failure: [0] uses 0xC bytes, so all instances use 0xC bytes
 FSeek(pos); BAZ zeta[2] <optimize=true>;
 

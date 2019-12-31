@@ -22,11 +22,19 @@ typedef union (BYTE BytesPerSectorShift)
     DWORD alpha;
     DWORD beta;
     DWORD gamma;
+    FOO bar[2](BytesPerSectorShift);       // this one is ok, because passed as parameter, so in scope
+}
+
+typedef union (BYTE BytesPerSectorShift)
+{
+    DWORD alpha;
+    DWORD beta;
+    DWORD gamma;
     FOO bar(BytesPerSectorShift);       // this one is ok, because passed as parameter, so in scope
-    struct {
-        FOO bar(BytesPerSectorShift);   // this one is not, because the BIZ struct has no access to containing struct's scope
-        FOO bar(BytesPerSectorShift);
-    } BIZ;
+//    struct {
+//        FOO bar(BytesPerSectorShift);   // this one is not, because the BIZ struct has no access to containing struct's scope
+//        FOO bar(BytesPerSectorShift);
+//    } BIZ;
 } BAZ <optimize=false>;
 
 
